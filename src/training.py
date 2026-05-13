@@ -11,37 +11,40 @@ Both functions:
   - Save model artefacts to models/
 """
 
+from pathlib import Path
+from src.uncertainty import wrap_with_mapie, evaluate_predictions
+from src.pinn_model import (SoftSensorPINN, physics_residual,
+                            LAMBDA_PHYSICS, DROPOUT_RATE, MC_SAMPLES)
+from src.feature_engineering import PHYSICS_FEATS
+from src.preprocessing import RAW_SENSORS, TARGETS
+from xgboost import XGBRegressor
+from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV, train_test_split
+from sklearn.preprocessing import RobustScaler
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, TensorDataset
+import torch.nn as nn
+import torch
 import numpy as np
 import pandas as pd
 import joblib
 import warnings
 warnings.filterwarnings("ignore")
 
-import torch
-import torch.nn as nn
-from torch.utils.data      import DataLoader, TensorDataset
-from torch.optim           import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
-
-from sklearn.pipeline         import Pipeline
-from sklearn.impute           import SimpleImputer
-from sklearn.preprocessing    import RobustScaler
-from sklearn.model_selection  import TimeSeriesSplit, RandomizedSearchCV, train_test_split
-from xgboost                  import XGBRegressor
-
-from src.preprocessing        import RAW_SENSORS, TARGETS
-from src.feature_engineering  import PHYSICS_FEATS
-from src.pinn_model           import (SoftSensorPINN, physics_residual,
-                                      LAMBDA_PHYSICS, DROPOUT_RATE, MC_SAMPLES)
-from src.uncertainty          import wrap_with_mapie, evaluate_predictions
 
 ALL_FEATURES = RAW_SENSORS + PHYSICS_FEATS
 RANDOM_STATE = 42
-DEVICE       = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+Path("models").mkdir(exist_ok=True)
+Path("results").mkdir(exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SHARED UTILITIES
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def build_preprocessor() -> Pipeline:
     """
@@ -56,9 +59,9 @@ def build_preprocessor() -> Pipeline:
 
 def _load_splits(path: str) -> tuple:
     """Load processed CSV and reconstruct temporal train/test split by year."""
-    df    = pd.read_csv(path)
+    df = pd.read_csv(path)
     train = df[df["year"] <= 2013].reset_index(drop=True)
-    test  = df[df["year"] >= 2014].reset_index(drop=True)
+    test = df[df["year"] >= 2014].reset_index(drop=True)
     return train, test
 
 
@@ -143,12 +146,12 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
     print(f"[1] Data loaded — Train: {len(train):,}  Test: {len(test):,}")
 
     X_train, y_train = train[ALL_FEATURES], train[TARGETS]
-    X_test,  y_test  = test[ALL_FEATURES],  test[TARGETS]
+    X_test,  y_test = test[ALL_FEATURES],  test[TARGETS]
 
     print("[2] Preprocessing (impute + RobustScale)...")
     preprocessor = build_preprocessor()
     X_train_proc = preprocessor.fit_transform(X_train)
-    X_test_proc  = preprocessor.transform(X_test)
+    X_test_proc = preprocessor.transform(X_test)
     joblib.dump(preprocessor, "models/preprocessor_xgb.joblib")
 
     all_metrics, all_mapie, all_fi = [], {}, {}
@@ -169,7 +172,7 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
 
         mapie = wrap_with_mapie(best_xgb, X_train_proc, y_tr, target)
         all_mapie[target] = mapie
-        all_fi[target]    = get_feature_importance(mapie, ALL_FEATURES)
+        all_fi[target] = get_feature_importance(mapie, ALL_FEATURES)
 
         joblib.dump(mapie, f"models/mapie_{target.lower()}.joblib")
         print(f"    Saved → models/mapie_{target.lower()}.joblib")
@@ -179,7 +182,7 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
     for target in TARGETS:
         y_pred, y_pis = all_mapie[target].predict_interval(X_test_proc)
         # predict_interval returns shape (n, 1, 2); squeeze to (n, 2)
-        y_pis_2d      = y_pis[:, :, 0]
+        y_pis_2d = y_pis[:, :, 0]
         preds[target] = (y_pred, y_pis_2d)
         m = evaluate_predictions(
             y_test[target].values, y_pred,
@@ -187,7 +190,7 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
         )
         all_metrics.append(m)
 
-    co_pred,  co_pis  = preds["CO"]
+    co_pred,  co_pis = preds["CO"]
     nox_pred, nox_pis = preds["NOx"]
 
     out = pd.DataFrame({
@@ -217,9 +220,9 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
 #  PINN PIPELINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-EPOCHS     = 120
+EPOCHS = 120
 BATCH_SIZE = 512
-LR         = 3e-4
+LR = 3e-4
 
 torch.manual_seed(RANDOM_STATE)
 np.random.seed(RANDOM_STATE)
@@ -251,9 +254,9 @@ def _preprocess_pinn(train: pd.DataFrame, val: pd.DataFrame,
     y_te = test[TARGETS].values.astype(np.float32)
 
     # Target scaling: RobustScaler fitted on train targets only
-    y_scaler       = RobustScaler()
-    y_tr_scaled    = y_scaler.fit_transform(y_tr)
-    y_va_scaled    = y_scaler.transform(y_va)
+    y_scaler = RobustScaler()
+    y_tr_scaled = y_scaler.fit_transform(y_tr)
+    y_va_scaled = y_scaler.transform(y_va)
 
     joblib.dump(pipe,     "models/pinn_preprocessor.joblib")
     joblib.dump(y_scaler, "models/pinn_y_scaler.joblib")
@@ -276,21 +279,24 @@ def train_pinn(X_tr, y_tr, X_va, y_va) -> tuple:
 
     Returns (model, history) where history contains per-epoch loss values.
     """
-    print(f"[3] Training PINN on {DEVICE}  (epochs={EPOCHS}, λ={LAMBDA_PHYSICS})...")
+    print(
+        f"[3] Training PINN on {DEVICE}  (epochs={EPOCHS}, λ={LAMBDA_PHYSICS})...")
 
     ds_tr = TensorDataset(*_to_tensors(X_tr, y_tr))
-    dl_tr = DataLoader(ds_tr, batch_size=BATCH_SIZE, shuffle=True,  drop_last=True)
+    dl_tr = DataLoader(ds_tr, batch_size=BATCH_SIZE,
+                       shuffle=True,  drop_last=True)
     ds_va = TensorDataset(*_to_tensors(X_va, y_va))
     dl_va = DataLoader(ds_va, batch_size=BATCH_SIZE, shuffle=False)
 
-    model     = SoftSensorPINN(n_features=len(ALL_FEATURES)).to(DEVICE)
+    model = SoftSensorPINN(n_features=len(ALL_FEATURES)).to(DEVICE)
     optimizer = AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
     scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS, eta_min=LR * 0.05)
-    mse_loss  = nn.MSELoss()
+    mse_loss = nn.MSELoss()
 
-    history        = {"train_data": [], "train_phys": [], "train_total": [], "val": []}
-    best_val_loss  = float("inf")
-    patience       = 0
+    history = {"train_data": [], "train_phys": [],
+               "train_total": [], "val": []}
+    best_val_loss = float("inf")
+    patience = 0
     patience_limit = 20
 
     for epoch in range(1, EPOCHS + 1):
@@ -299,9 +305,9 @@ def train_pinn(X_tr, y_tr, X_va, y_va) -> tuple:
 
         for xb, yb in dl_tr:
             optimizer.zero_grad()
-            pred    = model(xb)
-            l_data  = mse_loss(pred, yb)
-            l_phys  = physics_residual(xb, pred)
+            pred = model(xb)
+            l_data = mse_loss(pred, yb)
+            l_phys = physics_residual(xb, pred)
             l_total = l_data + LAMBDA_PHYSICS * l_phys
             l_total.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -320,7 +326,8 @@ def train_pinn(X_tr, y_tr, X_va, y_va) -> tuple:
         n_tr = len(dl_tr)
         history["train_data"].append(tr_data / n_tr)
         history["train_phys"].append(tr_phys / n_tr)
-        history["train_total"].append((tr_data + LAMBDA_PHYSICS * tr_phys) / n_tr)
+        history["train_total"].append(
+            (tr_data + LAMBDA_PHYSICS * tr_phys) / n_tr)
         history["val"].append(val_loss / len(dl_va))
 
         if epoch % 20 == 0 or epoch == 1:
@@ -340,7 +347,8 @@ def train_pinn(X_tr, y_tr, X_va, y_va) -> tuple:
                 print(f"    Early stop at epoch {epoch}")
                 break
 
-    model.load_state_dict(torch.load("models/pinn_best.pt", map_location=DEVICE))
+    model.load_state_dict(torch.load(
+        "models/pinn_best.pt", map_location=DEVICE))
     print(f"    Best validation loss: {best_val_loss:.5f}")
     return model, history
 
@@ -360,18 +368,18 @@ def evaluate_pinn(model, X_te: np.ndarray,
     model.eval()
     mean_scaled, std_scaled = model.predict_with_uncertainty(X_te_t)
     mean_scaled = mean_scaled.cpu().numpy()
-    std_scaled  = std_scaled.cpu().numpy()
+    std_scaled = std_scaled.cpu().numpy()
 
     y_pred = y_scaler.inverse_transform(mean_scaled)
-    y_std  = std_scaled * y_scaler.scale_   # propagate scale factor only
+    y_std = std_scaled * y_scaler.scale_   # propagate scale factor only
 
     metrics = []
     for i, target in enumerate(TARGETS):
         y_true = y_te_raw[:, i]
-        y_mu   = y_pred[:, i]
-        y_s    = y_std[:, i]
-        lo     = y_mu - 1.96 * y_s
-        hi     = y_mu + 1.96 * y_s
+        y_mu = y_pred[:, i]
+        y_s = y_std[:, i]
+        lo = y_mu - 1.96 * y_s
+        hi = y_mu + 1.96 * y_s
         m = evaluate_predictions(y_true, y_mu, lo, hi, target)
         metrics.append(m)
 
@@ -397,8 +405,8 @@ def run_pinn(data_path: str = "data/processed/syngas_features.csv"):
     train_df, test_df = _load_splits(data_path)
 
     # Reserve last 15% of training data for validation
-    val_size   = int(0.15 * len(train_df))
-    val_df     = train_df.iloc[-val_size:].reset_index(drop=True)
+    val_size = int(0.15 * len(train_df))
+    val_df = train_df.iloc[-val_size:].reset_index(drop=True)
     train_core = train_df.iloc[:-val_size].reset_index(drop=True)
     print(f"[1] Data loaded — Train: {len(train_core):,}  "
           f"Val: {len(val_df):,}  Test: {len(test_df):,}")
@@ -428,7 +436,8 @@ def run_pinn(data_path: str = "data/processed/syngas_features.csv"):
     out.to_csv("results/pinn_predictions.csv", index=False)
     print("  Predictions saved → results/pinn_predictions.csv")
 
-    pd.DataFrame(history).to_csv("results/pinn_training_history.csv", index=False)
+    pd.DataFrame(history).to_csv(
+        "results/pinn_training_history.csv", index=False)
 
     print("\nPINN pipeline complete.\n")
     return model, metrics, history
