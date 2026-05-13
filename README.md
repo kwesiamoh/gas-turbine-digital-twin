@@ -213,29 +213,6 @@ A live monitoring dashboard was developed using **Streamlit**.
 
 ---
 
-# 📂 Project Structure
-
-```bash
-project/
-│
-├── data/                   # Raw and processed datasets
-├── notebooks/              # EDA and experiments
-├── models/                 # Saved trained models
-├── src/
-│   ├── preprocessing.py
-│   ├── feature_engineering.py
-│   ├── pinn_model.py
-│   ├── uncertainty.py
-│   └── training.py
-│
-├── dashboard/              # Streamlit application
-├── results/                # Plots and evaluation outputs
-├── requirements.txt
-└── README.md
-```
-
----
-
 # 📚 Data Sources & Credits
 
 The data used in this project is sourced from credible academic and research repositories.
