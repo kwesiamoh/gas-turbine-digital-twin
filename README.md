@@ -8,18 +8,6 @@ The aim is to replace slow or difficult-to-maintain physical emission measuremen
 
 ---
 
-## TL;DR
-
-This project builds a digital twin soft-sensor for real-time gas turbine emission monitoring.
-
-The system predicts CO and NOx emissions from standard turbine operating data using thermodynamic feature engineering, physics-informed machine learning, and uncertainty estimation.
-
-Instead of relying only on physical emission sensors, the model acts as a virtual sensor that estimates emissions continuously from signals already available in the plant.
-
-The pipeline compares XGBoost with conformal uncertainty intervals against a physics-informed neural network with MC Dropout uncertainty.
-
-The results show that the model captures the main emission behavior under normal operating conditions, while high-emission events remain harder to predict and require stronger calibration before safety-critical deployment.
-
 ## 📌 Project Overview
 
 Gas turbines are widely used for electricity generation because they are flexible, efficient, and able to respond quickly to changing power demand.
@@ -252,6 +240,7 @@ Main dashboard functions:
 - live simulation mode over the test set
 
 The dashboard helps translate model predictions into operational signals: whether emissions are stable, whether uncertainty is increasing, and whether the turbine may be entering a higher-risk state.
+<img width="954" height="449" alt="Screenshot 2026-05-13 084055" src="https://github.com/user-attachments/assets/5c026ed2-ed78-418c-b4d0-bd73e6cdd5d7" />
 
 ---
 
