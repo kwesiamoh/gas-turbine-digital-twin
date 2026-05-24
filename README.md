@@ -1,96 +1,189 @@
 # 🌍 Digital Twin Soft-Sensor for Power Plant Emission Monitoring
 
-A Physics-Informed AI system for real-time prediction of gas turbine emissions using Digital Twin technology, uncertainty-aware machine learning, and thermodynamic feature engineering.
+This project develops a digital twin soft-sensor for real-time gas turbine emission monitoring.
+
+The system predicts **Carbon Monoxide (CO)** and **Nitrogen Oxides (NOx)** from operational turbine data using physics-informed machine learning, uncertainty estimation, and thermodynamic feature engineering.
+
+The aim is to replace slow or difficult-to-maintain physical emission measurements with a virtual sensor that can estimate emissions continuously from signals already available in the plant.
 
 ---
 
+## TL;DR
+
+This project builds a digital twin soft-sensor for real-time gas turbine emission monitoring.
+
+The system predicts CO and NOx emissions from standard turbine operating data using thermodynamic feature engineering, physics-informed machine learning, and uncertainty estimation.
+
+Instead of relying only on physical emission sensors, the model acts as a virtual sensor that estimates emissions continuously from signals already available in the plant.
+
+The pipeline compares XGBoost with conformal uncertainty intervals against a physics-informed neural network with MC Dropout uncertainty.
+
+The results show that the model captures the main emission behavior under normal operating conditions, while high-emission events remain harder to predict and require stronger calibration before safety-critical deployment.
+
 ## 📌 Project Overview
 
-Modern gas turbine power plants generate electricity efficiently, but they also emit harmful pollutants such as **Carbon Monoxide (CO)** and **Nitrogen Oxides (NOx)**.
+Gas turbines are widely used for electricity generation because they are flexible, efficient, and able to respond quickly to changing power demand.
 
-Monitoring these emissions in real time is challenging because traditional high-temperature emission sensors are expensive, slow to respond, difficult to maintain, and prone to calibration drift.
+At the same time, their combustion process can produce pollutants such as **CO** and **NOx**. These emissions are strongly affected by operating conditions such as temperature, pressure, humidity, air flow, turbine load, and combustion efficiency.
 
-This project introduces a **Digital Twin Soft-Sensor** capable of predicting emissions instantly using operational sensor data and physics-informed machine learning.
+Measuring emissions directly in real time is not always straightforward. High-temperature emission sensors can be expensive, slow to respond, difficult to maintain, and affected by calibration drift.
+
+This project approaches the problem through a **digital twin soft-sensor**: a data-driven virtual sensor that uses turbine operating conditions to estimate emissions instantly.
+
+The model is designed not only to predict emissions, but also to give operators a clearer view of when the turbine may be moving toward inefficient or higher-emission combustion.
 
 ---
 
 ## 🎯 Objective
 
-Build a **real-time virtual emissions sensor** that:
+The objective is to build a real-time virtual emissions sensor that can:
 
-✅ Predicts turbine emissions from operational parameters  
-✅ Detects when combustion becomes inefficient ("running dirty")  
-✅ Provides uncertainty-aware predictions for safer deployment  
-✅ Helps operators reduce emissions before environmental violations occur  
+- predict **CO** and **NOx** emissions from operational turbine parameters
+- identify operating conditions linked to inefficient combustion
+- provide uncertainty-aware predictions instead of only point estimates
+- support earlier intervention before emissions exceed acceptable limits
+- connect machine learning predictions with physically meaningful turbine behavior
+
+The focus is not only accuracy. The model should also be interpretable enough to make sense in an engineering context.
 
 ---
 
-## 🧠 Core Idea: Physics + AI
+## 🧠 Core Idea: Physics + Machine Learning
 
-Most machine learning models only learn patterns from raw data. This project goes further by integrating **thermodynamic principles** directly into the learning process through a Physics-Informed Neural Network (PINN).
+A purely data-driven model can learn correlations in historical turbine data, but it may not always respect the physical behavior of the system.
 
-The model is trained not only to minimise prediction error, but also to respect known physical laws governing gas turbine combustion.
+This project adds thermodynamic structure to the learning process.
+
+The model uses physics-derived features and a physics-informed neural network design so that predictions are guided by both:
+
+- observed emission measurements
+- known relationships between turbine operating conditions and combustion behavior
+
+This is especially important for emission monitoring, where the model should behave sensibly under changing operating regimes.
+
+Rather than asking the model to learn everything from raw sensor values, the pipeline gives it features that already carry engineering meaning.
 
 ---
 
 ## ⚙️ Technical Architecture
 
-### Layer 1 — Data Ingestion & Physics Feature Engineering
+## Layer 1 — Data Ingestion and Physics Feature Engineering
 
-Raw operational turbine data is validated and transformed into physically meaningful features.
+The first layer validates raw turbine operating data and transforms it into physically meaningful features.
 
-**Raw sensor inputs (9):** AT, AP, AH, AFDP, GTEP, TIT, TAT, CDP, TEY
+### Raw Sensor Inputs
 
-**Physics-derived features (7):**
+| Variable | Description |
+|---|---|
+| `AT` | Ambient temperature |
+| `AP` | Ambient pressure |
+| `AH` | Ambient humidity |
+| `AFDP` | Air filter difference pressure |
+| `GTEP` | Gas turbine exhaust pressure |
+| `TIT` | Turbine inlet temperature |
+| `TAT` | Turbine after temperature |
+| `CDP` | Compressor discharge pressure |
+| `TEY` | Turbine energy yield |
+
+From these signals, the pipeline derives additional features that describe turbine behavior more directly.
+
+### Physics-Derived Features
 
 | Feature | Formula | Physical meaning |
 |---|---|---|
-| `T_ratio` | TIT / TAT | Isentropic expansion efficiency proxy |
-| `compression` | CDP / AP | Compressor pressure ratio |
-| `T_drop` | TIT − TAT | Temperature drop across turbine |
-| `humidity_abs` | f(AH, AP, AT) | Absolute humidity via Magnus approximation |
-| `fouling_idx` | AFDP / AP | Normalised filter fouling |
-| `specific_work` | TEY / CDP | Energy yield per unit compression |
-| `dT_AT_TIT` | TIT − AT | Total temperature rise from ambient |
+| `T_ratio` | `TIT / TAT` | Proxy for expansion behavior across the turbine |
+| `compression` | `CDP / AP` | Compressor pressure ratio |
+| `T_drop` | `TIT - TAT` | Temperature drop across the turbine |
+| `humidity_abs` | `f(AH, AP, AT)` | Absolute humidity estimated from ambient conditions |
+| `fouling_idx` | `AFDP / AP` | Normalized air filter fouling indicator |
+| `specific_work` | `TEY / CDP` | Energy output relative to compression level |
+| `dT_AT_TIT` | `TIT - AT` | Temperature rise from ambient air to turbine inlet |
+
+These features make the learning problem more grounded in turbine physics.
+
+For example, humidity affects combustion temperature and NOx formation, while pressure ratios and turbine temperature differences are linked to the thermodynamic state of the machine.
 
 ---
 
-### Layer 2 — Hybrid AI Modelling
+## Layer 2 — Hybrid AI Modelling
 
-Two approaches with calibrated uncertainty intervals:
+The project compares two modelling approaches, both with uncertainty-aware outputs.
 
-#### 🌲 XGBoost + MAPIE
-- Hyperparameter search: `RandomizedSearchCV` with `TimeSeriesSplit` (5 folds, preserves temporal ordering)
-- Uncertainty: split-conformal prediction via MAPIE `SplitConformalRegressor`
-- Coverage guarantee is distribution-free — no Gaussian assumption on residuals
+### 🌲 XGBoost + MAPIE
 
-#### 🧠 Physics-Informed Neural Network (PINN)
+XGBoost is used as a strong tree-based baseline.
 
-Architecture: `BatchNorm → Linear(128, SiLU) → Linear(64, SiLU) → Linear(32, SiLU) → CO head / NOx head`
+Training is performed with temporal validation rather than random splitting, so the model is tested on future-like data instead of mixed historical samples.
 
-Hybrid loss function:
+Main setup:
 
-```
+- `RandomizedSearchCV` for hyperparameter search
+- `TimeSeriesSplit` with 5 folds
+- no temporal shuffling
+- split-conformal prediction using `MAPIE`
+- uncertainty intervals without assuming Gaussian residuals
+
+This gives a practical benchmark: a strong classical machine learning model with calibrated prediction intervals.
+
+---
+
+### 🧠 Physics-Informed Neural Network
+
+The second model is a physics-informed neural network designed for multi-target emission prediction.
+
+Architecture:
+
+```text
+BatchNorm
+→ Linear(128, SiLU)
+→ Linear(64, SiLU)
+→ Linear(32, SiLU)
+→ CO head / NOx head
+
+The model predicts **CO** and **NOx** through separate output heads while sharing the same learned representation of turbine operating conditions.
+
+The training objective combines data fitting with a physics-based penalty:
+
+```text
 L_total = L_data + λ · L_physics
 ```
 
-The model is penalised when predictions differ from measured emissions **and** when they violate the thermodynamic directional constraint on CO w.r.t. TIT, compression, and humidity. Set `λ = 0` to recover a plain MLP baseline.
+- `L_data` measures the prediction error against observed emissions.
+- `L_physics` penalises predictions that violate expected thermodynamic directionality, especially the relationship between CO, turbine inlet temperature, compression, and humidity.
 
-Training: AdamW + CosineAnnealingLR, gradient clipping, early stopping (patience = 20).
+Setting `λ = 0` removes the physics penalty and recovers a standard MLP baseline. This makes it possible to compare the effect of adding physical constraints directly.
+
+Training setup:
+
+- AdamW optimizer
+- cosine annealing learning-rate schedule
+- gradient clipping
+- early stopping with patience of 20 epochs
 
 ---
 
 ## 📉 Uncertainty Quantification — MC Dropout
 
-Dropout layers remain active at inference. 100 stochastic forward passes are averaged to produce a predictive mean and standard deviation.
+For the neural network, uncertainty is estimated using Monte Carlo Dropout.
 
-```
-95% Prediction Interval = mean ± 1.96 × std
+Dropout remains active during inference, and the model performs 100 stochastic forward passes for each prediction.
+
+The mean of these passes is used as the final prediction, while the spread gives an estimate of predictive uncertainty.
+
+```text
+95% Prediction Interval = mean ± 1.96 × standard deviation
 ```
 
-✅ Detects unreliable predictions  
-✅ Flags high-risk operating conditions  
-✅ Provides confidence bands for operators  
+This allows the model to communicate when it is confident and when the operating condition is less familiar or harder to predict.
+
+Uncertainty is important in this setting because emission monitoring is operationally sensitive. A point estimate alone may look precise, even when the model is uncertain.
+
+The uncertainty layer helps flag:
+
+- less reliable predictions
+- high-risk operating conditions
+- periods where operator attention may be needed
+- cases where the model moves outside familiar operating regimes
 
 ---
 
@@ -99,44 +192,76 @@ Dropout layers remain active at inference. 100 stochastic forward passes are ave
 ### 1️⃣ Prediction Fidelity
 
 | Target | R² |
-|--------|----|
-| CO     | 0.64 |
-| NOx    | 0.68 |
+|---|---|
+| CO | 0.64 |
+| NOx | 0.68 |
 
-The model captures major physical trends of turbine emissions. Reliability is strongest during standard low-emission operation; dense hexbin regions in the parity plots indicate high confidence in normal operating conditions.
+The model captures the main emission trends in the turbine dataset.
+
+Performance is strongest during standard low-emission operating conditions, where the training data is denser and the combustion behavior is more regular.
+
+The parity plots show this clearly: dense regions follow the expected prediction trend, while higher-emission events are more difficult to estimate precisely.
+
+This pattern is realistic for emission modelling. Normal operation is usually well represented in historical data, while abnormal or high-emission regimes are less frequent and more nonlinear.
 
 ---
 
 ### 2️⃣ Uncertainty Reliability
 
-The calibration curve shows signs of **overconfidence** — predicted uncertainty intervals are narrower than the empirical coverage warrants. Uncertainty bounds should be widened before deployment in safety-critical environments.
+The calibration analysis shows that the uncertainty estimates are not fully conservative.
+
+The model tends to be overconfident, meaning the predicted intervals are narrower than the empirical error distribution would require.
+
+This is an important result rather than a failure. It shows that the current uncertainty estimates are useful diagnostically, but should be widened or recalibrated before deployment in safety-critical monitoring.
+
+Possible improvements include:
+
+- conformal calibration of neural network intervals
+- wider empirical prediction intervals
+- target-specific uncertainty scaling
+- additional high-emission training samples
+- separate calibration for normal and abnormal operating regimes
 
 ---
 
 ### 3️⃣ Residual Analysis
 
-Most residuals cluster around zero with no systematic bias during low-emission conditions. However, error variance increases during high CO emission events, indicating that high-emission combustion physics are more nonlinear and may benefit from additional physics constraints or targeted training data.
+Most residuals are centered close to zero during normal low-emission operation.
+
+This suggests that the model is not strongly biased under common operating conditions.
+
+However, residual variance increases during high CO events. These cases are harder to predict because they are less frequent and may involve more complex combustion dynamics.
+
+This result points to a useful direction for improvement: the model would likely benefit from more targeted representation of high-emission regimes, either through additional data, weighted training, or stronger physics constraints.
 
 ---
 
 ## 🖥️ Real-Time Dashboard
 
-A live monitoring dashboard built with **Streamlit + Plotly**:
+The project includes a live monitoring dashboard built with **Streamlit** and **Plotly**.
 
-- Real-time emission predictions with 95% uncertainty bands
-- Configurable alarm and warning thresholds
-- Predicted vs actual scatter and PI width drift charts
-- Live simulation mode stepping through the test set
+The dashboard is designed to make the model outputs usable from an operator perspective, not only as offline evaluation metrics.
+
+Main dashboard functions:
+
+- real-time CO and NOx prediction
+- 95% uncertainty bands
+- configurable warning and alarm thresholds
+- predicted vs actual emission visualisation
+- prediction interval width tracking
+- live simulation mode over the test set
+
+The dashboard helps translate model predictions into operational signals: whether emissions are stable, whether uncertainty is increasing, and whether the turbine may be entering a higher-risk state.
 
 ---
 
 ## 🗂️ Project Structure
 
-```
+```text
 project/
 ├── data/
 │   ├── raw/                    # Unmodified UCI download
-│   └── processed/              # Validated data + physics features
+│   └── processed/              # Validated data and physics features
 ├── notebooks/                  # EDA and experiments
 ├── models/                     # Saved model artefacts (.joblib, .pt)
 ├── src/
@@ -144,12 +269,12 @@ project/
 │   ├── feature_engineering.py  # Physics-derived feature construction
 │   ├── pinn_model.py           # PINN architecture and physics residual
 │   ├── uncertainty.py          # MAPIE wrapper and evaluation utilities
-│   └── training.py             # Full training pipelines for both models
+│   └── training.py             # Training pipelines for both models
 ├── dashboard/
 │   └── app.py                  # Streamlit monitoring dashboard
 ├── results/
-│   ├── scientific_plots.py     # Publication-quality figures (PDF output)
-│   └── *.csv / *.png           # Model outputs (generated at runtime)
+│   ├── scientific_plots.py     # Publication-quality figures
+│   └── *.csv / *.png           # Generated model outputs
 ├── build_dataset.py            # Data pipeline entry point
 ├── compare_models.py           # Side-by-side model comparison
 └── requirements.txt
@@ -162,13 +287,13 @@ project/
 ```bash
 pip install -r requirements.txt
 
-# Create output directories (first time only)
+# Create output directories
 mkdir models results data/raw data/processed
 
 # 1. Fetch and process data
 python build_dataset.py
 
-# 2. Train models (can be run independently)
+# 2. Train models
 python -c "from src.training import run_xgboost; run_xgboost()"
 python -c "from src.training import run_pinn; run_pinn()"
 
@@ -187,13 +312,22 @@ streamlit run dashboard/app.py
 ## 📚 Data Source
 
 **Gas Turbine CO and NOx Emission Data Set (2019)**  
-UCI Machine Learning Repository · DOI: `10.24432/C5WC95`  
-36,733 hourly instances from a working gas turbine in Turkey (2011–2015).
+UCI Machine Learning Repository  
+DOI: `10.24432/C5WC95`
 
-**Split:** Train = 2011–2013 | Test = 2014–2015 (temporal, no leakage)
+The dataset contains **36,733 hourly observations** from a working gas turbine in Turkey, covering the period from 2011 to 2015.
 
-**Research reference:**  
-Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019). *Predicting CO and NOx emissions from gas turbines: multi-layer perceptron and ensemble learning approaches and a new large-scale dataset.*
+The split is temporal to avoid leakage:
+
+| Split | Period |
+|---|---|
+| Train | 2011–2013 |
+| Test | 2014–2015 |
+
+**Research reference:**
+
+Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019).  
+*Predicting CO and NOx emissions from gas turbines: multi-layer perceptron and ensemble learning approaches and a new large-scale dataset.*
 
 ---
 
@@ -205,3 +339,31 @@ Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019). *Predicting CO and NOx emi
 | Data Processing | Pandas, NumPy |
 | Visualisation | Matplotlib, Seaborn, Plotly |
 | Deployment | Streamlit |
+
+---
+
+## 🧪 Research Contribution
+
+This project shows how a digital twin soft-sensor can be built from standard turbine operating data.
+
+The main contribution is the combination of:
+
+- operational gas turbine data
+- thermodynamic feature engineering
+- physics-informed neural network training
+- uncertainty-aware prediction
+- real-time dashboard deployment
+
+The results show that the model can capture the dominant emission behavior of the turbine, especially under normal operating conditions.
+
+The calibration and residual analyses also show where the model still needs care: high-emission events are harder to predict, and uncertainty intervals need stronger calibration before safety-critical use.
+
+This makes the project useful not only as a prediction pipeline, but also as an engineering study of where machine learning performs well and where physical complexity still matters.
+
+---
+
+## 🔍 Key Takeaway
+
+A virtual emissions sensor can estimate CO and NOx continuously from turbine operating data, while also indicating when its predictions are less certain.
+
+For plant operation, this type of system can support earlier detection of inefficient combustion, better emission awareness, and more informed intervention before regulatory or environmental limits become a problem.
