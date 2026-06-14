@@ -129,10 +129,8 @@ BatchNorm
 → CO head / NOx head
 
 The model predicts **CO** and **NOx** through separate output heads while sharing the same learned representation of turbine operating conditions.
-
 The training objective combines data fitting with a physics-based penalty:
 
-```text
 L_total = L_data + λ · L_physics
 ```
 
