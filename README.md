@@ -173,7 +173,7 @@ The uncertainty layer helps flag:
 
 ---
 
-## 📊 Scientific Results
+## 📊 Results
 
 ### 1️⃣ Prediction Fidelity
 
