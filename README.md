@@ -354,3 +354,7 @@ This makes the project useful not only as a prediction pipeline, but also as an 
 A virtual emissions sensor can estimate CO and NOx continuously from turbine operating data, while also indicating when its predictions are less certain.
 
 For plant operation, this type of system can support earlier detection of inefficient combustion, better emission awareness, and more informed intervention before regulatory or environmental limits become a problem.
+
+## ## 🤖 Development Process
+
+This project was developed with support from Claude Code as an AI-assisted programming tool. The core concept, architecture, technical decisions, and implementation direction are my own.
