@@ -15,7 +15,6 @@ Train/test split follows the original Kaya 2019 paper:
   Training: 2011–2013  |  Test: 2014–2015
 """
 
-import numpy as np
 import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
@@ -44,7 +43,7 @@ CANONICAL = {
     "afdp": "AFDP", "gtep": "GTEP",
     "tit": "TIT", "tat": "TAT",
     "cdp": "CDP", "tey": "TEY",
-    "co": "CO", "nox": "NOx",
+    "co": "CO", "nox": "NOx", "year": "year",
 }
 
 RAW_SENSORS  = ["AT", "AP", "AH", "AFDP", "GTEP", "TIT", "TAT", "CDP", "TEY"]
@@ -67,13 +66,22 @@ def fetch_uci_dataset() -> pd.DataFrame:
 
     print("[1] Fetching UCI Gas Turbine dataset (ID=551)...")
     ds = fetch_ucirepo(id=551)
-    X  = ds.data.features.copy()
+    X = ds.data.features.copy()
 
-    # Some ucimlrepo versions fold CO/NOx into features rather than targets
+    # Some ucimlrepo versions expose CO/NOx in features, targets, or both.
+    # Append only target columns that are not already present (case-insensitive)
+    # so duplicate column names cannot silently propagate downstream.
+    df = X.copy()
     if ds.data.targets is not None:
-        df = pd.concat([X, ds.data.targets.copy()], axis=1)
-    else:
-        df = X.copy()
+        y = ds.data.targets.copy()
+        if isinstance(y, pd.Series):
+            y = y.to_frame()
+        existing = {str(col).lower() for col in df.columns}
+        new_target_cols = [
+            col for col in y.columns if str(col).lower() not in existing
+        ]
+        if new_target_cols:
+            df = pd.concat([df, y[new_target_cols]], axis=1)
 
     # Normalise column names to canonical form
     rename_map = {
@@ -93,17 +101,14 @@ def fetch_uci_dataset() -> pd.DataFrame:
             f"Try: pip install --upgrade ucimlrepo"
         )
 
-    # Reconstruct year column if absent.
-    # ucimlrepo returns data year-by-year; block sizes are roughly equal
-    # across 2011–2015 (5 years).
+    # The temporal protocol depends on the explicit UCI ``year`` feature.
+    # Never fabricate years from equal row blocks: the annual files have
+    # different sizes, so doing so can silently corrupt the train/test split.
     if "year" not in df.columns:
-        n = len(df)
-        block = n // 5
-        year_col = []
-        for yr in range(2011, 2016):
-            count = block if yr < 2015 else n - 4 * block
-            year_col.extend([yr] * count)
-        df.insert(0, "year", year_col[:n])
+        raise ValueError(
+            "Required 'year' feature not returned by ucimlrepo. "
+            "Upgrade ucimlrepo rather than reconstructing years from row order."
+        )
 
     print(f"    Loaded {len(df):,} rows, columns: {list(df.columns)}")
     return df

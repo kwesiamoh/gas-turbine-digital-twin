@@ -18,7 +18,7 @@ from src.pinn_model import (SoftSensorPINN, physics_residual,
 from src.feature_engineering import PHYSICS_FEATS
 from src.preprocessing import RAW_SENSORS, TARGETS
 from xgboost import XGBRegressor
-from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV, train_test_split
+from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 from sklearn.preprocessing import RobustScaler
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -37,9 +37,6 @@ warnings.filterwarnings("ignore")
 ALL_FEATURES = RAW_SENSORS + PHYSICS_FEATS
 RANDOM_STATE = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-Path("models").mkdir(exist_ok=True)
-Path("results").mkdir(exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SHARED UTILITIES
@@ -65,6 +62,12 @@ def _load_splits(path: str) -> tuple:
     return train, test
 
 
+def _ensure_output_dirs():
+    """Create model/result output directories relative to the active project root."""
+    Path("models").mkdir(parents=True, exist_ok=True)
+    Path("results").mkdir(parents=True, exist_ok=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  XGBOOST PIPELINE
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,27 +84,31 @@ XGB_PARAM_GRID = {
 }
 
 
-def tune_xgboost(X_train_proc: np.ndarray,
+def tune_xgboost(X_train: pd.DataFrame,
                  y_col: np.ndarray,
                  target_name: str) -> dict:
     """
-    RandomizedSearchCV with TimeSeriesSplit.
+    RandomizedSearchCV with TimeSeriesSplit and fold-local preprocessing.
 
-    TimeSeriesSplit preserves temporal ordering so no future readings leak
-    into earlier folds. n_iter=30 gives a reasonable coverage of the grid;
-    increase for a more thorough search at the cost of runtime.
+    The imputer/scaler is fitted independently inside every temporal CV fold,
+    so feature statistics from later fold observations cannot leak backward
+    into earlier training folds. The returned dict contains only XGBoost params.
     """
     print(f"    Tuning XGBoost for '{target_name}'...")
     tscv = TimeSeriesSplit(n_splits=5)
-    base = XGBRegressor(
-        objective="reg:squarederror",
-        tree_method="hist",
-        random_state=RANDOM_STATE,
-        n_jobs=-1,
-    )
+    base = Pipeline([
+        ("preprocessor", build_preprocessor()),
+        ("model", XGBRegressor(
+            objective="reg:squarederror",
+            tree_method="hist",
+            random_state=RANDOM_STATE,
+            n_jobs=-1,
+        )),
+    ])
+    param_grid = {f"model__{k}": v for k, v in XGB_PARAM_GRID.items()}
     search = RandomizedSearchCV(
         base,
-        param_distributions=XGB_PARAM_GRID,
+        param_distributions=param_grid,
         n_iter=30,
         cv=tscv,
         scoring="neg_root_mean_squared_error",
@@ -109,19 +116,19 @@ def tune_xgboost(X_train_proc: np.ndarray,
         n_jobs=-1,
         verbose=0,
     )
-    search.fit(X_train_proc, y_col)
+    search.fit(X_train, y_col)
+    best_params = {
+        key.removeprefix("model__"): value
+        for key, value in search.best_params_.items()
+    }
     print(f"      Best CV RMSE : {-search.best_score_:.4f}")
-    print(f"      Best params  : {search.best_params_}")
-    return search.best_params_
+    print(f"      Best params  : {best_params}")
+    return best_params
 
 
 def get_feature_importance(model, feature_names: list) -> pd.DataFrame:
-    """
-    Extract XGBoost gain-based feature importance from a MAPIE-wrapped model.
-    model._estimator accesses the underlying XGBRegressor.
-    """
-    xgb = model._estimator
-    imp = xgb.feature_importances_
+    """Extract gain-based feature importance from a fitted XGBRegressor."""
+    imp = model.feature_importances_
     return (pd.DataFrame({"feature": feature_names, "importance": imp})
               .sort_values("importance", ascending=False)
               .reset_index(drop=True))
@@ -138,6 +145,7 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
       results/xgboost_predictions.csv
       results/xgboost_feature_importance.csv
     """
+    _ensure_output_dirs()
     print("=" * 65)
     print("  XGBoost Soft Sensor + MAPIE Conformal Prediction")
     print("=" * 65)
@@ -145,12 +153,21 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
     train, test = _load_splits(data_path)
     print(f"[1] Data loaded — Train: {len(train):,}  Test: {len(test):,}")
 
-    X_train, y_train = train[ALL_FEATURES], train[TARGETS]
-    X_test,  y_test = test[ALL_FEATURES],  test[TARGETS]
+    # Preserve chronological order: the final 20% of 2011–2013 is reserved
+    # exclusively for conformalization and is never seen during tuning/fitting.
+    calib_size = max(1, int(0.20 * len(train)))
+    fit_df = train.iloc[:-calib_size].reset_index(drop=True)
+    calib_df = train.iloc[-calib_size:].reset_index(drop=True)
 
-    print("[2] Preprocessing (impute + RobustScale)...")
+    X_fit, y_fit = fit_df[ALL_FEATURES], fit_df[TARGETS]
+    X_calib, y_calib = calib_df[ALL_FEATURES], calib_df[TARGETS]
+    X_test, y_test = test[ALL_FEATURES], test[TARGETS]
+
+    print(f"[2] Preprocessing (impute + RobustScale) — Fit: {len(fit_df):,}  "
+          f"Conformalize: {len(calib_df):,}")
     preprocessor = build_preprocessor()
-    X_train_proc = preprocessor.fit_transform(X_train)
+    X_fit_proc = preprocessor.fit_transform(X_fit)
+    X_calib_proc = preprocessor.transform(X_calib)
     X_test_proc = preprocessor.transform(X_test)
     joblib.dump(preprocessor, "models/preprocessor_xgb.joblib")
 
@@ -158,10 +175,10 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
 
     print("[3] Tuning, fitting, and wrapping each target...")
     for target in TARGETS:
-        y_tr = y_train[target].values
-        y_te = y_test[target].values
+        y_fit_target = y_fit[target].values
+        y_calib_target = y_calib[target].values
 
-        best_params = tune_xgboost(X_train_proc, y_tr, target)
+        best_params = tune_xgboost(X_fit, y_fit_target, target)
         best_xgb = XGBRegressor(
             **best_params,
             objective="reg:squarederror",
@@ -170,9 +187,12 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
             n_jobs=-1,
         )
 
-        mapie = wrap_with_mapie(best_xgb, X_train_proc, y_tr, target)
+        mapie = wrap_with_mapie(
+            best_xgb, X_fit_proc, y_fit_target,
+            X_calib_proc, y_calib_target, target
+        )
         all_mapie[target] = mapie
-        all_fi[target] = get_feature_importance(mapie, ALL_FEATURES)
+        all_fi[target] = get_feature_importance(best_xgb, ALL_FEATURES)
 
         joblib.dump(mapie, f"models/mapie_{target.lower()}.joblib")
         print(f"    Saved → models/mapie_{target.lower()}.joblib")
@@ -181,7 +201,7 @@ def run_xgboost(data_path: str = "data/processed/syngas_features.csv"):
     preds = {}
     for target in TARGETS:
         y_pred, y_pis = all_mapie[target].predict_interval(X_test_proc)
-        # predict_interval returns shape (n, 1, 2); squeeze to (n, 2)
+        # MAPIE v1 returns (n_samples, 2, n_confidence_levels).
         y_pis_2d = y_pis[:, :, 0]
         preds[target] = (y_pred, y_pis_2d)
         m = evaluate_predictions(
@@ -305,6 +325,7 @@ def train_pinn(X_tr, y_tr, X_va, y_va) -> tuple:
 
         for xb, yb in dl_tr:
             optimizer.zero_grad()
+            xb = xb.detach().requires_grad_(True)
             pred = model(xb)
             l_data = mse_loss(pred, yb)
             l_phys = physics_residual(xb, pred)
@@ -318,23 +339,30 @@ def train_pinn(X_tr, y_tr, X_va, y_va) -> tuple:
         scheduler.step()
 
         model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for xb, yb in dl_va:
-                val_loss += mse_loss(model(xb), yb).item()
+        val_data, val_phys = 0.0, 0.0
+        for xb, yb in dl_va:
+            xb = xb.detach().requires_grad_(True)
+            pred = model(xb)
+            l_val_data = mse_loss(pred, yb)
+            l_val_phys = physics_residual(xb, pred)
+            val_data += l_val_data.item()
+            val_phys += l_val_phys.item()
 
         n_tr = len(dl_tr)
+        n_va = len(dl_va)
         history["train_data"].append(tr_data / n_tr)
         history["train_phys"].append(tr_phys / n_tr)
         history["train_total"].append(
             (tr_data + LAMBDA_PHYSICS * tr_phys) / n_tr)
-        history["val"].append(val_loss / len(dl_va))
+        history["val"].append(
+            (val_data + LAMBDA_PHYSICS * val_phys) / n_va
+        )
 
         if epoch % 20 == 0 or epoch == 1:
             print(f"    Ep {epoch:3d}/{EPOCHS}  "
                   f"L_data={history['train_data'][-1]:.4f}  "
                   f"L_phys={history['train_phys'][-1]:.4f}  "
-                  f"L_val={history['val'][-1]:.4f}")
+                  f"L_val_total={history['val'][-1]:.4f}")
 
         # Save best checkpoint and apply patience-based early stopping
         if history["val"][-1] < best_val_loss - 1e-4:
@@ -359,8 +387,9 @@ def evaluate_pinn(model, X_te: np.ndarray,
     MC Dropout inference on the test set.
 
     Scales predictions back to original units using y_scaler.
-    Uncertainty (std) is propagated through the inverse scale transformation:
-      std_original ≈ std_scaled * y_scaler.scale_
+    The dropout standard deviation is an epistemic uncertainty estimate; the
+    mean ± 1.96*std bounds below are approximate uncertainty intervals whose
+    empirical coverage is measured rather than guaranteed.
     """
     print("[6] Evaluating PINN on test set (2014–2015)...")
     X_te_t = torch.tensor(X_te).to(DEVICE)
@@ -380,7 +409,9 @@ def evaluate_pinn(model, X_te: np.ndarray,
         y_s = y_std[:, i]
         lo = y_mu - 1.96 * y_s
         hi = y_mu + 1.96 * y_s
-        m = evaluate_predictions(y_true, y_mu, lo, hi, target)
+        m = evaluate_predictions(
+            y_true, y_mu, lo, hi, target, nominal_coverage=None
+        )
         metrics.append(m)
 
     return y_pred, y_std, metrics
@@ -398,6 +429,7 @@ def run_pinn(data_path: str = "data/processed/syngas_features.csv"):
       results/pinn_predictions.csv
       results/pinn_training_history.csv
     """
+    _ensure_output_dirs()
     print("=" * 65)
     print("  Physics-Informed Neural Network (PINN) Soft Sensor")
     print("=" * 65)

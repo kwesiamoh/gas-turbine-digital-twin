@@ -19,10 +19,10 @@ Loss function:
   L_physics : directional constraint residual (see physics_residual docstring)
 
 MC Dropout uncertainty:
-  Dropout is kept active at inference time. Running N forward passes
-  yields a distribution; mean and std are used as prediction and uncertainty.
-  If std values collapse to near zero: check DROPOUT_RATE >= 0.1 and that
-  model is in .train() mode (not .eval()) during MC sampling.
+  The model remains in evaluation mode so BatchNorm uses its learned running
+  statistics, while only Dropout layers are re-enabled for stochastic forward
+  passes. Running N passes yields a predictive mean and epistemic uncertainty
+  estimate.
 """
 
 import torch
@@ -54,10 +54,10 @@ class SoftSensorPINN(nn.Module):
     """
     Shared trunk with independent CO and NOx output heads.
 
-    BatchNorm1d on input normalises across the batch dimension.
-    Note: BatchNorm requires batch_size >= 2. At single-sample inference,
-    call model.eval() before predict_with_uncertainty to use running stats —
-    but note this also disables dropout, so use batch inference for MC Dropout.
+    BatchNorm1d on input normalises across the batch dimension during training.
+    MC Dropout inference keeps BatchNorm in evaluation mode and activates only
+    Dropout layers, so single-sample inference is safe and running statistics
+    are not modified by test data.
 
     Xavier uniform initialisation is used for all Linear layers; this is
     better conditioned for regression than PyTorch's default Kaiming init.
@@ -91,16 +91,24 @@ class SoftSensorPINN(nn.Module):
         """
         Monte Carlo Dropout inference.
 
-        Keeps dropout active via model.train(), runs n_samples forward passes,
-        and returns the empirical mean and std across passes.
+        Keeps BatchNorm in evaluation mode while enabling only Dropout layers,
+        runs n_samples forward passes, and returns the empirical mean and std.
 
         Returns:
           mean : (n, 2) — predicted CO and NOx (scaled)
           std  : (n, 2) — uncertainty estimate per output
         """
-        self.train()   # activates dropout for MC sampling
+        if n_samples < 2:
+            raise ValueError("n_samples must be >= 2 for a finite MC standard deviation")
+
+        self.eval()
+        for module in self.modules():
+            if isinstance(module, nn.Dropout):
+                module.train()
+
         with torch.no_grad():
             preds = torch.stack([self(x) for _ in range(n_samples)], dim=0)
+
         self.eval()
         return preds.mean(dim=0), preds.std(dim=0)
 
@@ -108,24 +116,39 @@ class SoftSensorPINN(nn.Module):
 def physics_residual(x_batch: torch.Tensor,
                      y_pred: torch.Tensor) -> torch.Tensor:
     """
-    Soft directional constraint: CO should decrease with higher TIT and
-    compression, and increase with higher absolute humidity.
+    Soft directional constraint on the CO response.
 
-    Encoded as a linear approximation in scaled feature space:
-      CO_eq ≈ -0.6 * TIT_norm - 0.3 * compression_norm + 0.2 * humidity_norm
+    Expected local directions in scaled feature space:
+      d(CO)/d(TIT)         <= 0
+      d(CO)/d(compression) <= 0
+      d(CO)/d(humidity)    >= 0
 
-    This is not a strict mass-balance equation — it is a learned directional
-    prior that keeps predictions thermodynamically consistent. Set
-    LAMBDA_PHYSICS = 0 to disable and train a plain data-driven MLP.
+    The loss penalises only sign violations of these local derivatives rather
+    than forcing CO toward an arbitrary linear equation. This makes the term a
+    genuine directional prior while preserving the existing model architecture.
 
-    Debug: if L_physics dominates L_data in early training, reduce
-    LAMBDA_PHYSICS or verify that feature scaling is consistent with the
-    coefficients above (they assume RobustScaler output, roughly [-2, 2]).
+    ``x_batch`` must have ``requires_grad=True`` during training/validation.
+    Set LAMBDA_PHYSICS = 0 to recover the plain data-driven MLP objective.
     """
-    TIT_norm  = x_batch[:, IDX_TIT]
-    comp_norm = x_batch[:, IDX_COMPRESSION]
-    hum_norm  = x_batch[:, IDX_HUMIDITY]
+    if not x_batch.requires_grad:
+        raise ValueError("physics_residual requires x_batch.requires_grad=True")
 
-    co_eq           = -0.6 * TIT_norm - 0.3 * comp_norm + 0.2 * hum_norm
-    co_pred_scaled  = y_pred[:, 0]   # column 0 is CO (scaled)
-    return ((co_pred_scaled - co_eq) ** 2).mean()
+    co_pred = y_pred[:, 0]
+    grad_co = torch.autograd.grad(
+        outputs=co_pred.sum(),
+        inputs=x_batch,
+        create_graph=True,
+        retain_graph=True,
+    )[0]
+
+    dco_dtit = grad_co[:, IDX_TIT]
+    dco_dcomp = grad_co[:, IDX_COMPRESSION]
+    dco_dhum = grad_co[:, IDX_HUMIDITY]
+
+    # relu(z) penalises z > 0 for features expected to reduce CO;
+    # relu(-z) penalises z < 0 for humidity, which is expected to increase CO.
+    penalty_tit = torch.relu(dco_dtit).pow(2).mean()
+    penalty_comp = torch.relu(dco_dcomp).pow(2).mean()
+    penalty_hum = torch.relu(-dco_dhum).pow(2).mean()
+
+    return 0.6 * penalty_tit + 0.3 * penalty_comp + 0.2 * penalty_hum
