@@ -184,7 +184,7 @@ streamlit run dashboard/app.py
 UCI Machine Learning Repository · DOI: `10.24432/C5WC95`  
 36,733 hourly instances from a working gas turbine in Turkey (2011–2015).
 
-**Split:** Train = 2011–2013 | Test = 2014–2015 (temporal, no leakage)
+**Split:** Train = 2011–2013 | Test = 2014–2015
 
 **Research reference:**  
 Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019). *Predicting CO and NOx emissions from gas turbines: multi-layer perceptron and ensemble learning approaches and a new large-scale dataset.*
