@@ -23,7 +23,6 @@ The final test period is always **2014–2015**. No 2014–2015 target values ar
 ## 🛠️ Fixes and Improvements Implemented
 
 Fixed **MC Dropout + BatchNorm** so only Dropout remains active during uncertainty sampling.
-- Replaced the old hand-written CO physics equation with **autograd-based directional physics constraints**.
 - Added **NOx physics constraints** to the PINN.
 - Removed **XGBoost conformal-calibration leakage** using a chronological holdout.
 - Removed **preprocessing leakage** inside `TimeSeriesSplit`.
@@ -32,11 +31,6 @@ Fixed **MC Dropout + BatchNorm** so only Dropout remains active during uncertain
 - Improved **year handling and dataset compatibility** to avoid unsafe temporal reconstruction.
 - Fixed **Streamlit dashboard** threshold, playback, and indexing issues.
 - Added **prediction bias and year-by-year evaluation** for 2014 and 2015.
-- Fixed **MAPIE dependency compatibility**, output-directory handling, and methodology wording in the documentation.
-
-These changes improve leakage prevention, uncertainty reliability, temporal evaluation, and scientific defensibility while keeping the original project structure, models, features, targets, and train/test protocol unchanged.
-
-
 ---
 
 ## 🎯 Objectives
