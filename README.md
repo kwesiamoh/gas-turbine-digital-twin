@@ -397,7 +397,3 @@ Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019), *Predicting CO and NOx emi
 | Persistence | Joblib, PyTorch checkpoints |
 
 ---
-
-## ⚠️ Deployment Note
-
-This repository is an engineering/research soft-sensor framework, not a certified emissions-monitoring instrument. Before operational deployment, the models should be validated against plant-specific instrumentation, drift-monitoring rules, recalibration procedures, alarm requirements, and applicable environmental regulations.
