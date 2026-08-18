@@ -3,7 +3,7 @@ Streamlit process monitoring dashboard for the gas turbine soft sensor.
 
 Reads prediction CSVs from results/:
   results/xgboost_predictions.csv  — XGBoost + MAPIE
-  results/pinn_predictions.csv     — PINN + MC Dropout
+  results/pinn_predictions.csv     — calibrated PINN + MC Dropout
 
 Falls back to synthetic data if neither file exists, so the dashboard
 can be explored without running the full training pipeline first.
@@ -109,7 +109,7 @@ def load_predictions() -> dict:
 
     for label, filename in [
         ("XGBoost + MAPIE",    "xgboost_predictions.csv"),
-        ("PINN + MC Dropout",  "pinn_predictions.csv"),
+        ("PINN + MC Dropout (calibrated)",  "pinn_predictions.csv"),
     ]:
         path = base / filename
         if path.exists():
@@ -134,7 +134,7 @@ def load_predictions() -> dict:
             "pi_hi_NOx":  nox_pred + 1.96 * nox_std,
         })
         datasets["XGBoost + MAPIE (simulated)"]   = fallback
-        datasets["PINN + MC Dropout (simulated)"] = fallback.copy()
+        datasets["PINN + MC Dropout (calibrated, simulated)"] = fallback.copy()
 
     return datasets
 
@@ -225,13 +225,13 @@ def render_timeseries(df: pd.DataFrame, target: str, window: int,
 
     fig = go.Figure()
 
-    # Filled uncertainty band (95% PI)
+    # Filled nominal 95% uncertainty band
     fig.add_trace(go.Scatter(
         x=np.concatenate([x, x[::-1]]),
         y=np.concatenate([sl[f"pi_hi_{target}"], sl[f"pi_lo_{target}"][::-1]]),
         fill="toself", fillcolor="rgba(0,212,170,0.12)",
         line=dict(color="rgba(0,0,0,0)"),
-        name="95% PI", hoverinfo="skip",
+        name="95% interval", hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=x, y=sl[f"y_true_{target}"],
@@ -253,7 +253,7 @@ def render_timeseries(df: pd.DataFrame, target: str, window: int,
     fig.update_layout(
         **PLOTLY_LAYOUT,
         title=dict(
-            text=f"{target} — Soft Sensor Prediction with Reported Uncertainty Interval",
+            text=f"{target} — Soft Sensor Prediction with 95% Calibrated Interval",
             font=dict(color=CLR["accent"], size=13),
         ),
         yaxis_title=f"{target} [mg/m³]",
@@ -314,7 +314,7 @@ def render_bottom_row(df: pd.DataFrame, target: str, end_idx: int):
         fig_width.update_layout(
             **PLOTLY_LAYOUT,
             title=dict(
-                text=f"{target} — Reported Interval Width over Time",
+                text=f"{target} — 95% Interval Width over Time",
                 font=dict(color=CLR["accent"], size=12),
             ),
             yaxis_title="PI width [mg/m³]",
@@ -332,7 +332,7 @@ def main():
     st.markdown("# ⚙️ Soft Sensor Monitor")
     st.markdown(
         f'<span style="color:{CLR["subtext"]}; font-family:monospace; font-size:0.85rem;">'
-        "UCI Gas Turbine · CO & NOx · XGBoost/MAPIE + PINN/MC-Dropout</span>",
+        "UCI Gas Turbine · CO & NOx · XGBoost/MAPIE + calibrated PINN/MC-Dropout</span>",
         unsafe_allow_html=True,
     )
     st.markdown("---")

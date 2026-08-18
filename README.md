@@ -1,193 +1,388 @@
 # 🌍 Digital Twin Soft-Sensor for Power Plant Emission Monitoring
 
-A Physics-Informed AI system for real-time prediction of gas turbine emissions using Digital Twin technology, uncertainty-aware machine learning, and thermodynamic feature engineering.
+A physics-informed, uncertainty-aware machine-learning framework for estimating gas-turbine **CO** and **NOx** emissions from routinely measured operating variables.
+
+The project combines thermodynamic feature engineering, a tree-based conformal model, a physics-informed neural model, temporal validation, uncertainty calibration, and a Streamlit monitoring dashboard.
 
 ---
 
 ## 📌 Project Overview
 
-Modern gas turbine power plants generate electricity efficiently, but they also emit harmful pollutants such as **Carbon Monoxide (CO)** and **Nitrogen Oxides (NOx)**.
+Continuous emission measurements can be expensive to maintain and can suffer from delay or calibration drift. A **soft sensor** estimates emissions from other plant measurements so operators can monitor combustion behaviour continuously and identify high-risk operating conditions earlier.
 
-Monitoring these emissions in real time is challenging because traditional high-temperature emission sensors are expensive, slow to respond, difficult to maintain, and prone to calibration drift.
+This project compares two complementary soft-sensor approaches:
 
-This project introduces a **Digital Twin Soft-Sensor** capable of predicting emissions instantly using operational sensor data and physics-informed machine learning.
+- **XGBoost + MAPIE** — strong nonlinear tabular regression with split-conformal uncertainty.
+- **Physics-Informed Neural Network (PINN) + MC Dropout** — a multi-output neural model with soft physical sensitivity constraints, post-hoc point calibration, and held-out uncertainty calibration.
 
----
-
-## 🎯 Objective
-
-Build a **real-time virtual emissions sensor** that:
-
-✅ Predicts turbine emissions from operational parameters  
-✅ Detects when combustion becomes inefficient ("running dirty")  
-✅ Provides uncertainty-aware predictions for safer deployment  
-✅ Helps operators reduce emissions before environmental violations occur  
+The final test period is always **2014–2015**. No 2014–2015 target values are used for model fitting, checkpoint selection, bias calibration, or interval calibration.
 
 ---
 
-## 🧠 Core Idea: Physics + AI
+## 🎯 Objectives
 
-Most machine learning models only learn patterns from raw data. This project goes further by integrating **thermodynamic principles** directly into the learning process through a Physics-Informed Neural Network (PINN).
+The framework is designed to:
 
-The model is trained not only to minimise prediction error, but also to respect physically motivated directional priors governing gas turbine combustion.
+- Predict **CO** and **NOx** from turbine operating measurements.
+- Detect inefficient/high-emission operating conditions.
+- Quantify predictive uncertainty instead of returning point predictions alone.
+- Use physically motivated information without forcing the network to obey an invented closed-form emissions equation.
+- Test generalisation under a strict chronological split rather than an easier random split.
+- Expose temporal drift through overall and year-by-year diagnostics.
 
 ---
 
-## ⚙️ Technical Architecture
+## 🗃️ Dataset and Temporal Protocol
 
-### Layer 1 — Data Ingestion & Physics Feature Engineering
+**Dataset:** UCI Gas Turbine CO and NOx Emission Data Set (2011–2015)
 
-Raw operational turbine data is validated and transformed into physically meaningful features.
+**Raw inputs (9):**
 
-**Raw sensor inputs (9):** AT, AP, AH, AFDP, GTEP, TIT, TAT, CDP, TEY
+`AT`, `AP`, `AH`, `AFDP`, `GTEP`, `TIT`, `TAT`, `CDP`, `TEY`
 
-**Physics-derived features (7):**
+**Targets:**
 
-| Feature | Formula | Physical meaning |
+`CO`, `NOx`
+
+### Top-level split
+
+```text
+2011 ───── 2012 ───── 2013 │ 2014 ───── 2015
+       development data     │   untouched test
+```
+
+The project never uses the 2014–2015 targets to tune or calibrate either model.
+
+### XGBoost internal split
+
+Within 2011–2013:
+
+```text
+first 80%                         final 20%
+fit + TimeSeriesSplit tuning  │  MAPIE conformalization
+```
+
+Preprocessing is fitted independently inside each `TimeSeriesSplit` fold during hyperparameter search, preventing future-fold feature statistics from leaking backward.
+
+### PINN internal split
+
+Within 2011–2013:
+
+```text
+first 75%     next 15%      next 5%          final 5%
+model fit  │  validation  │ point calibration │ interval calibration
+```
+
+- **Model fit:** neural-network parameter learning.
+- **Validation:** early stopping/checkpoint selection.
+- **Point calibration:** corrects systematic level/scale bias.
+- **Interval calibration:** calibrates MC-Dropout uncertainty on data untouched by model fitting, checkpoint selection, and point-calibrator fitting.
+
+This keeps the overall project structure unchanged while giving each calibration step its own chronological holdout.
+
+---
+
+## ⚙️ Physics-Derived Features
+
+Seven engineered features augment the nine raw measurements:
+
+| Feature | Formula | Interpretation |
 |---|---|---|
-| `T_ratio` | TIT / TAT | Isentropic expansion efficiency proxy |
-| `compression` | CDP / AP × 1000 | Scaled compressor-pressure proxy |
-| `T_drop` | TIT − TAT | Temperature drop across turbine |
-| `humidity_abs` | f(AH, AT) | Absolute-humidity proxy via Magnus approximation |
-| `fouling_idx` | AFDP / AP × 1000 | Scaled filter-pressure-drop proxy |
-| `specific_work` | TEY / CDP | Energy yield per unit compression |
-| `dT_AT_TIT` | TIT − AT | Total temperature rise from ambient |
+| `T_ratio` | `TIT / TAT` | turbine temperature-ratio proxy |
+| `compression` | `CDP / AP × 1000` | scaled compressor-pressure proxy |
+| `T_drop` | `TIT - TAT` | turbine temperature drop |
+| `humidity_abs` | `f(AH, AT)` | absolute-humidity proxy using the Magnus approximation |
+| `fouling_idx` | `AFDP / AP × 1000` | scaled filter-pressure-drop proxy |
+| `specific_work` | `TEY / CDP` | energy yield per unit compression |
+| `dT_AT_TIT` | `TIT - AT` | total temperature rise from ambient to turbine inlet |
+
+These features are retained for both XGBoost and PINN so the model comparison uses the same information base.
 
 ---
 
-### Layer 2 — Hybrid AI Modelling
+## 🌲 Model 1 — XGBoost + MAPIE
 
-Two approaches with uncertainty-aware outputs:
+The XGBoost pipeline uses:
 
-#### 🌲 XGBoost + MAPIE
-- Hyperparameter search: `RandomizedSearchCV` with `TimeSeriesSplit` (5 folds), with preprocessing fitted independently inside each CV fold
-- Final 20% of the 2011–2013 block is reserved chronologically for conformalization before preprocessing/tuning
-- Uncertainty: split-conformal prediction via MAPIE `SplitConformalRegressor`
+- `RandomizedSearchCV`
+- 5-fold `TimeSeriesSplit`
+- fold-local median imputation + `RobustScaler`
+- a final chronological conformalization block
+- MAPIE `SplitConformalRegressor`
 
-#### 🧠 Physics-Informed Neural Network (PINN)
+The model produces a point estimate and a nominal **95% split-conformal interval** for each pollutant.
 
-Architecture: `BatchNorm → Linear(128, SiLU) → Linear(64, SiLU) → Linear(32, SiLU) → CO head / NOx head`
+Main outputs:
 
-Hybrid loss function:
-
-```
-L_total = L_data + λ · L_physics
-```
-
-The model is penalised when predictions differ from measured emissions **and** when local CO gradients violate the directional prior: CO should decrease with TIT/compression and increase with humidity. Set `λ = 0` to recover a plain MLP baseline.
-
-Training: AdamW + CosineAnnealingLR, gradient clipping, early stopping (patience = 20).
-
----
-
-## 📉 Uncertainty Quantification — MC Dropout
-
-At inference the network stays in evaluation mode so BatchNorm statistics remain fixed, while only Dropout layers are re-enabled. 100 stochastic forward passes are averaged to produce a predictive mean and an epistemic uncertainty estimate.
-
-```
-Approximate uncertainty interval = mean ± 1.96 × std
+```text
+models/preprocessor_xgb.joblib
+models/mapie_co.joblib
+models/mapie_nox.joblib
+results/xgboost_predictions.csv
+results/xgboost_feature_importance.csv
 ```
 
-The interval's empirical coverage is evaluated on held-out data; unlike MAPIE conformal intervals, MC-Dropout bounds do not carry an automatic 95% coverage guarantee.
+---
+
+## 🧠 Model 2 — Physics-Informed Neural Network
+
+### Architecture
+
+```text
+Input
+  ↓
+BatchNorm1d
+  ↓
+Linear(128) + SiLU + Dropout
+  ↓
+Linear(64) + SiLU + Dropout
+  ↓
+Linear(32) + SiLU
+  ↓
+┌─────────────┬──────────────┐
+│   CO head   │   NOx head   │
+└─────────────┴──────────────┘
+```
+
+The shared trunk allows CO and NOx to learn common turbine-state representations while retaining separate output heads.
+
+### Training objective
+
+```text
+L_total = L_data + λ × L_physics
+```
+
+`L_data` is the multi-output MSE. `L_physics` is a soft derivative-sign penalty computed with PyTorch autograd.
+
+### CO directional priors
+
+The network is penalised when its local sensitivity violates:
+
+```text
+d(CO)/d(TIT)          ≤ 0
+d(CO)/d(compression)  ≤ 0
+d(CO)/d(humidity)     ≥ 0
+```
+
+### NOx directional priors
+
+NOx now has its own physics guidance:
+
+```text
+d(NOx)/d(TIT)       ≥ 0
+d(NOx)/d(humidity)  ≤ 0
+```
+
+These are **soft directional priors**, not hard mass-balance equations. They guide local trends without forcing predictions toward an arbitrary hand-written emissions formula.
+
+Training uses:
+
+- AdamW
+- cosine-annealing learning rate
+- gradient clipping
+- early stopping
+- RobustScaler target scaling
 
 ---
 
-## 📊 Scientific Results
+## 🎯 PINN Point-Prediction Calibration
 
-### 1️⃣ Prediction Fidelity
+Temporal drift can preserve correlation while shifting the prediction level. To address systematic bias without touching the test set, the PINN uses a held-out affine calibrator for each target:
 
-Run `compare_models.py` after training to generate the reproducible RMSE, MAE, R², empirical coverage, and interval-width results for both models. Numerical results are intentionally generated from the current run rather than hard-coded in this README.
+```text
+y_calibrated = slope × y_raw + intercept
+```
+
+The slope is constrained to be non-negative so calibration does not reverse the ranking learned by the network.
+
+The calibrator is fitted only on the dedicated **point-calibration block** from late 2011–2013 development data.
+
+Saved artifact:
+
+```text
+models/pinn_calibration.joblib
+```
 
 ---
 
-### 2️⃣ Uncertainty Reliability
+## 📉 PINN Uncertainty Calibration
 
-Use the generated comparison metrics to check empirical coverage and interval width for the current run. MAPIE intervals are conformalized on a held-out chronological block; MC-Dropout intervals are approximate and should be judged by their measured held-out coverage before any deployment claim is made.
+MC Dropout is run with **BatchNorm frozen** and only Dropout layers active. This avoids test-batch statistics modifying BatchNorm state and also supports single-sample inference.
+
+For each observation, 100 stochastic forward passes produce:
+
+```text
+predictive mean
+MC-Dropout standard deviation
+```
+
+A separate interval-calibration block computes normalized residual scores:
+
+```text
+score = |y_true - y_pred| / max(MC_std, ε)
+```
+
+The finite-sample 95% conformal quantile `q` is then used to form:
+
+```text
+lower = y_pred - q × MC_std
+upper = y_pred + q × MC_std
+```
+
+This retains the relative MC-Dropout uncertainty pattern while calibrating its scale on held-out observations.
+
+**Important:** a nominal 95% interval can still miss 95% coverage when the future operating regime differs substantially from the calibration regime. That is why the project reports empirical test coverage and year-by-year diagnostics rather than assuming calibration remains perfect under drift.
+
+Calibration diagnostics are saved to:
+
+```text
+results/pinn_calibration_summary.csv
+```
 
 ---
 
-### 3️⃣ Residual Analysis
+## 📊 Evaluation
 
-`compare_models.py` generates residual distributions and interval-width diagnostics. Interpret those plots from the current trained models rather than assuming a fixed residual pattern in advance.
+Run:
+
+```bash
+python compare_models.py
+```
+
+The comparison reports for both CO and NOx:
+
+- RMSE
+- MAE
+- R²
+- mean prediction bias
+- empirical interval coverage
+- average interval width
+
+Outputs:
+
+```text
+results/model_comparison.csv
+results/model_comparison_by_year.csv
+results/model_comparison.png
+```
+
+`model_comparison_by_year.csv` separates 2014 and 2015 so temporal degradation is visible instead of being hidden inside one aggregate score.
+
+### Interpreting R²
+
+A negative test R² does not mean the code failed. It means the model generalised worse than a constant-mean baseline on that future period. In this project, that should trigger investigation of temporal bias and operating-condition drift rather than replacement with a random train/test split.
+
+### Interpreting coverage
+
+For a nominal 95% interval, empirical coverage near 0.95 is desirable, but interval width matters too. Very high coverage obtained only through extremely wide intervals is not necessarily operationally useful.
 
 ---
 
-## 🖥️ Real-Time Dashboard
+## 🖥️ Streamlit Monitoring Dashboard
 
-A live monitoring dashboard built with **Streamlit + Plotly**:
+Launch with:
 
-- Real-time emission predictions with reported uncertainty bands
-- Configurable alarm and warning thresholds
-- Predicted vs actual scatter and PI width drift charts
-- Live simulation mode stepping through the test set
+```bash
+streamlit run dashboard/app.py
+```
+
+The dashboard provides:
+
+- calibrated CO/NOx predictions
+- nominal 95% uncertainty bands
+- configurable warning/alarm thresholds
+- predicted-vs-actual diagnostics
+- interval-width monitoring
+- live playback through the chronological test sequence
+
+If prediction files do not exist, the dashboard falls back to synthetic data for UI testing.
 
 ---
 
 ## 🗂️ Project Structure
 
-```
-project/
+```text
+gas-turbine-digital/
 ├── data/
-│   ├── raw/                    # Unmodified UCI download
-│   └── processed/              # Validated data + physics features
-├── notebooks/                  # EDA and experiments
-├── models/                     # Saved model artefacts (.joblib, .pt)
+│   ├── raw/
+│   └── processed/
+├── notebooks/
+├── models/
 ├── src/
-│   ├── preprocessing.py        # Data fetch, validation, train/test split
-│   ├── feature_engineering.py  # Physics-derived feature construction
-│   ├── pinn_model.py           # PINN architecture and physics residual
-│   ├── uncertainty.py          # MAPIE wrapper and evaluation utilities
-│   └── training.py             # Full training pipelines for both models
+│   ├── preprocessing.py
+│   ├── feature_engineering.py
+│   ├── pinn_model.py
+│   ├── uncertainty.py
+│   └── training.py
 ├── dashboard/
-│   └── app.py                  # Streamlit monitoring dashboard
+│   └── app.py
 ├── results/
-│   ├── scientific_plots.py     # Publication-quality figures (PDF output)
-│   └── *.csv / *.png           # Model outputs (generated at runtime)
-├── build_dataset.py            # Data pipeline entry point
-├── compare_models.py           # Side-by-side model comparison
-└── requirements.txt
+├── build_dataset.py
+├── compare_models.py
+├── requirements.txt
+└── README.md
 ```
+
+The project layout and main entry points remain unchanged.
 
 ---
 
 ## 🚀 Quickstart
 
+From the repository root:
+
 ```bash
-# Python 3.10+
 pip install -r requirements.txt
 
-# Create output directories (first time only)
-mkdir models results data/raw data/processed
-
-# 1. Fetch and process data
+# 1. Fetch, validate and engineer the dataset
 python build_dataset.py
 
-# 2. Train models (can be run independently)
+# 2. Train XGBoost + MAPIE
 python -c "from src.training import run_xgboost; run_xgboost()"
+
+# 3. Train and calibrate the PINN
 python -c "from src.training import run_pinn; run_pinn()"
 
-# 3. Compare models
+# 4. Compare models and generate diagnostics
 python compare_models.py
-
-# 4. Generate scientific figures (if results/scientific_plots.py is present)
-python results/scientific_plots.py
 
 # 5. Launch dashboard
 streamlit run dashboard/app.py
 ```
+
+You do **not** need to manually create `models/` or `results/`; the training entry points create them when required.
+
+---
+
+## 🔁 Recommended Experiment Workflow
+
+After changing model assumptions or hyperparameters:
+
+```text
+1. Retrain
+2. Compare overall metrics
+3. Inspect 2014 vs 2015 metrics
+4. Check mean bias
+5. Check interval coverage and width
+6. Inspect feature importance / residual plots
+7. Only then update any performance claims in reports or presentations
+```
+
+Do not tune parameters against the 2014–2015 test results. Use the test period only for final evaluation.
 
 ---
 
 ## 📚 Data Source
 
 **Gas Turbine CO and NOx Emission Data Set (2019)**  
-UCI Machine Learning Repository · DOI: `10.24432/C5WC95`  
-36,733 hourly instances from a working gas turbine in Turkey (2011–2015).
+UCI Machine Learning Repository  
+DOI: `10.24432/C5WC95`
 
-**Split:** Train = 2011–2013 | Test = 2014–2015
+36,733 hourly observations from a gas turbine power plant in Turkey, covering 2011–2015.
 
-**Research reference:**  
-Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019). *Predicting CO and NOx emissions from gas turbines: multi-layer perceptron and ensemble learning approaches and a new large-scale dataset.*
+Research reference:
+
+Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019), *Predicting CO and NOx emissions from gas turbines: multi-layer perceptron and ensemble learning approaches and a new large-scale dataset.*
 
 ---
 
@@ -195,7 +390,14 @@ Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019). *Predicting CO and NOx emi
 
 | Category | Libraries |
 |---|---|
-| Machine Learning | PyTorch, XGBoost, Scikit-learn, MAPIE |
-| Data Processing | Pandas, NumPy |
-| Visualisation | Matplotlib, Seaborn, Plotly |
+| Machine learning | PyTorch, XGBoost, Scikit-learn, MAPIE |
+| Data processing | Pandas, NumPy |
+| Visualisation | Matplotlib, Plotly |
 | Deployment | Streamlit |
+| Persistence | Joblib, PyTorch checkpoints |
+
+---
+
+## ⚠️ Deployment Note
+
+This repository is an engineering/research soft-sensor framework, not a certified emissions-monitoring instrument. Before operational deployment, the models should be validated against plant-specific instrumentation, drift-monitoring rules, recalibration procedures, alarm requirements, and applicable environmental regulations.
