@@ -116,7 +116,7 @@ def _plot_comparison(combined: pd.DataFrame,
 
         for i, (model, grp) in enumerate(combined.groupby("model")):
             vals  = [grp[grp["target"] == t][metric].values[0] for t in TARGETS]
-            colour = list(model_colours.values())[i]
+            colour = model_colours[model]
             ax.bar(x + i * w, vals, width=w, color=colour,
                    alpha=0.85, edgecolor=CLR["bg"], lw=0.4, label=model)
 
@@ -148,8 +148,8 @@ def _plot_comparison(combined: pd.DataFrame,
     ax5.legend(fontsize=8, facecolor="#1a1a2e", labelcolor=CLR["text"])
 
     # Panel 6: PI width vs prediction value (CO only)
-    # Wider intervals in a specific prediction range suggest higher aleatoric
-    # uncertainty there — useful for calibration analysis.
+    # Wider intervals in a specific prediction range indicate greater reported
+    # uncertainty there; interpretation differs between MAPIE and MC Dropout.
     ax6 = fig.add_subplot(gs[1, 2])
     w_xgb  = xgb_df["pi_hi_CO"].values  - xgb_df["pi_lo_CO"].values
     w_pinn = pinn_df["pi_hi_CO"].values  - pinn_df["pi_lo_CO"].values
