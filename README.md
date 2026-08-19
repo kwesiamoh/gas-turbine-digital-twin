@@ -1,6 +1,6 @@
 # 🌍 Digital Twin Soft-Sensor for Power Plant Emission Monitoring
 
-A Physics-Informed AI system for real-time prediction of gas turbine emissions using Digital Twin technology, uncertainty-aware machine learning, and thermodynamic feature engineering.
+A physics-constrained AI system for real-time prediction of gas turbine emissions using Digital Twin technology, uncertainty-aware machine learning, and thermodynamic feature engineering.
 
 ---
 
@@ -10,7 +10,7 @@ Modern gas turbine power plants generate electricity efficiently, but they also 
 
 Monitoring these emissions in real time is challenging because traditional high-temperature emission sensors are expensive, slow to respond, difficult to maintain, and prone to calibration drift.
 
-This project introduces a **Digital Twin Soft-Sensor** capable of predicting emissions instantly using operational sensor data and physics-informed machine learning.
+This project introduces a **Digital Twin Soft-Sensor** capable of predicting emissions instantly using operational sensor data and physics-constrained machine learning.
 
 ---
 
@@ -29,7 +29,8 @@ Build a **real-time virtual emissions sensor** that:
 
 Most machine learning models only learn patterns from raw data. This project goes further by integrating **thermodynamic principles** directly into the learning process through a Physics-Informed Neural Network (PINN).
 
-The model is trained not only to minimise prediction error, but also to respect physically motivated directional priors governing gas turbine combustion.
+The neural soft sensor is trained not only to minimise prediction error, but also to respect physically motivated directional priors for its predicted CO response. This is a physics-constrained multi-task neural network, not a conventional PINN that enforces governing ODE or PDE residuals.
+
 
 ---
 
@@ -64,7 +65,7 @@ Two approaches with uncertainty-aware outputs:
 - Final 20% of the 2011–2013 block is reserved chronologically for conformalization before preprocessing/tuning
 - Uncertainty: split-conformal prediction via MAPIE `SplitConformalRegressor`
 
-#### 🧠 Physics-Informed Neural Network (PINN)
+#### 🧠 Physics-Constrained Neural Soft Sensor
 
 Architecture: `BatchNorm → Linear(128, SiLU) → Linear(64, SiLU) → Linear(32, SiLU) → CO head / NOx head`
 
@@ -74,7 +75,9 @@ Hybrid loss function:
 L_total = L_data + λ · L_physics
 ```
 
-The model is penalised when predictions differ from measured emissions **and** when local CO gradients violate the directional prior: CO should decrease with TIT/compression and increase with humidity. Set `λ = 0` to recover a plain MLP baseline.
+The data loss covers both CO and NOx. The physics loss directly constrains only CO: it penalises local gradients that violate the directional prior that CO should decrease with TIT/compression and increase with humidity. NOx is predicted jointly but currently has no direct physics constraint. Set `λ = 0` to recover a plain multi-output MLP baseline.
+
+This formulation is gradient-based physical regularization rather than an equation-based PINN: it does not solve or enforce conservation equations, ODEs, or PDEs. The internal `pinn_*` function and artefact names are retained for compatibility.
 
 Training: AdamW + CosineAnnealingLR, gradient clipping, early stopping (patience = 20).
 
@@ -134,7 +137,7 @@ project/
 ├── src/
 │   ├── preprocessing.py        # Data fetch, validation, train/test split
 │   ├── feature_engineering.py  # Physics-derived feature construction
-│   ├── pinn_model.py           # PINN architecture and physics residual
+│   ├── pinn_model.py           # Physics-constrained NN and gradient regularizer
 │   ├── uncertainty.py          # MAPIE wrapper and evaluation utilities
 │   └── training.py             # Full training pipelines for both models
 ├── dashboard/
@@ -202,7 +205,7 @@ alarm, not as a reason to tune against the test labels. Production use requires
 periodic labeled recalibration or an additional operating-regime/configuration
 signal.
 
-PINN MC-Dropout widths are normalized split-conformal intervals calibrated on a
+Physics-constrained NN MC-Dropout widths are normalized split-conformal intervals calibrated on a
 dedicated chronological block that is excluded from fitting and early stopping.
 
 ---
@@ -211,7 +214,7 @@ dedicated chronological block that is excluded from fitting and early stopping.
 
 ### 2026-08-19
 
-- Added leakage-safe normalized conformal calibration for PINN MC-Dropout intervals.
+- Added leakage-safe normalized conformal calibration for neural-network MC-Dropout intervals.
 - Documented the 2014–2015 NOx concept shift and deployment limitation.
 - Redesigned the Streamlit interface as an operator-focused control-room dashboard.
 - Added focused uncertainty-calibration tests and Windows/headless execution fixes.
