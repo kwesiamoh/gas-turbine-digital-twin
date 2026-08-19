@@ -3,7 +3,7 @@ Streamlit process monitoring dashboard for the gas turbine soft sensor.
 
 Reads prediction CSVs from results/:
   results/xgboost_predictions.csv  — XGBoost + MAPIE
-  results/pinn_predictions.csv     — calibrated PINN + MC Dropout
+  results/pinn_predictions.csv     — PINN + MC Dropout
 
 Falls back to synthetic data if neither file exists, so the dashboard
 can be explored without running the full training pipeline first.
@@ -32,64 +32,104 @@ import streamlit as st
 import plotly.graph_objects as go
 
 st.set_page_config(
-    page_title="Soft Sensor Monitor",
-    page_icon="⚙️",
+    page_title="Turbine Emissions Intelligence",
+    page_icon="GT",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 CLR = {
-    "bg":      "#0f1117",
-    "surface": "#1e1e2e",
-    "accent":  "#00d4aa",
-    "amber":   "#f7b731",
-    "red":     "#ff6b6b",
-    "purple":  "#a78bfa",
-    "text":    "#e0e0e0",
-    "subtext": "#888899",
+    "bg":      "#07111f",
+    "surface": "#0d1b2a",
+    "surface2":"#112338",
+    "border":  "#1f3852",
+    "accent":  "#23c4a8",
+    "blue":    "#4da3ff",
+    "amber":   "#f2b84b",
+    "red":     "#f06464",
+    "purple":  "#9c8cff",
+    "text":    "#f2f6fa",
+    "subtext": "#91a4b7",
 }
 
 PLOTLY_LAYOUT = dict(
     paper_bgcolor=CLR["bg"],
     plot_bgcolor=CLR["surface"],
-    font=dict(color=CLR["text"], family="monospace"),
-    margin=dict(l=40, r=20, t=40, b=40),
-    xaxis=dict(gridcolor="#2a2a3a", showgrid=True),
-    yaxis=dict(gridcolor="#2a2a3a", showgrid=True),
+    font=dict(color=CLR["subtext"], family="Inter, Segoe UI, sans-serif", size=12),
+    margin=dict(l=48, r=24, t=56, b=44),
+    xaxis=dict(gridcolor="#193047", showgrid=True, zeroline=False),
+    yaxis=dict(gridcolor="#193047", showgrid=True, zeroline=False),
+    hoverlabel=dict(bgcolor=CLR["surface2"], bordercolor=CLR["border"], font_color=CLR["text"]),
 )
 
 st.markdown(f"""
 <style>
-  .stApp {{ background-color: {CLR['bg']}; color: {CLR['text']}; }}
-  .block-container {{ padding-top: 1.5rem; }}
+  .stApp {{ background: radial-gradient(circle at 80% -10%, #102b43 0, {CLR['bg']} 34%); color: {CLR['text']}; }}
+  .block-container {{ padding-top: 2rem; padding-bottom: 3rem; max-width: 1500px; }}
+  header[data-testid="stHeader"] {{ background: transparent; }}
+  #MainMenu, footer {{ visibility: hidden; }}
   div[data-testid="metric-container"] {{
-      background: {CLR['surface']};
-      border: 1px solid #2a2a3a;
-      border-radius: 8px;
-      padding: 12px 18px;
+      background: linear-gradient(145deg, {CLR['surface2']}, {CLR['surface']});
+      border: 1px solid {CLR['border']};
+      border-radius: 12px;
+      padding: 16px 18px;
+      min-height: 108px;
+      box-shadow: 0 12px 32px rgba(0,0,0,.14);
   }}
   div[data-testid="metric-container"] label {{
       color: {CLR['subtext']} !important;
-      font-size: 0.75rem;
-      letter-spacing: 0.08em;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
+      font-weight: 650;
   }}
   div[data-testid="metric-container"] div[data-testid="stMetricValue"] {{
       color: {CLR['accent']} !important;
-      font-size: 1.8rem;
-      font-family: monospace;
+      font-size: 1.65rem;
+      font-family: "Segoe UI", sans-serif;
+      font-weight: 650;
   }}
-  .alarm-red   {{ background: rgba(255,107,107,0.15); border-left: 4px solid {CLR['red']};
-                  padding: 8px 14px; border-radius: 4px; color: {CLR['red']};
-                  font-family: monospace; }}
-  .alarm-amber {{ background: rgba(247,183,49,0.12);  border-left: 4px solid {CLR['amber']};
-                  padding: 8px 14px; border-radius: 4px; color: {CLR['amber']};
-                  font-family: monospace; }}
-  .alarm-ok    {{ background: rgba(0,212,170,0.10);   border-left: 4px solid {CLR['accent']};
-                  padding: 8px 14px; border-radius: 4px; color: {CLR['accent']};
-                  font-family: monospace; }}
-  h1, h2, h3 {{ color: {CLR['accent']} !important; font-family: monospace; }}
-  .stSidebar {{ background-color: {CLR['surface']} !important; }}
+  .status-card {{ display:flex; align-items:center; justify-content:space-between;
+                  padding: 13px 17px; margin: 14px 0 20px; border-radius: 10px;
+                  border: 1px solid; font-size: .88rem; font-weight: 600; }}
+  .status-card span:last-child {{ font-weight: 450; opacity: .88; }}
+  .alarm-red   {{ background: rgba(240,100,100,.10); border-color: rgba(240,100,100,.45); color: {CLR['red']}; }}
+  .alarm-amber {{ background: rgba(242,184,75,.10); border-color: rgba(242,184,75,.45); color: {CLR['amber']}; }}
+  .alarm-ok    {{ background: rgba(35,196,168,.09); border-color: rgba(35,196,168,.38); color: {CLR['accent']}; }}
+  .eyebrow {{ color:{CLR['accent']}; letter-spacing:.14em; text-transform:uppercase;
+              font-size:.69rem; font-weight:750; margin-bottom:.35rem; }}
+  .hero-title {{ color:{CLR['text']}; font-size:2rem; line-height:1.15; font-weight:680;
+                 letter-spacing:-.03em; margin:0; }}
+  .hero-copy {{ color:{CLR['subtext']}; margin-top:.45rem; font-size:.9rem; }}
+  .live-pill {{ display:inline-flex; align-items:center; gap:7px; float:right;
+                color:{CLR['accent']}; background:rgba(35,196,168,.08);
+                border:1px solid rgba(35,196,168,.3); border-radius:99px;
+                padding:7px 12px; font-size:.72rem; font-weight:700; letter-spacing:.06em; }}
+  .live-dot {{ width:7px; height:7px; border-radius:50%; background:{CLR['accent']};
+               box-shadow:0 0 0 4px rgba(35,196,168,.12); }}
+  .drift-note {{ margin-top:.75rem; padding:10px 12px; border-radius:8px;
+                 color:{CLR['subtext']}; background:rgba(77,163,255,.055);
+                 border:1px solid rgba(77,163,255,.18); font-size:.76rem;
+                 line-height:1.45; }}
+  .drift-note strong {{ display:block; color:#b8c9d9; font-size:.68rem;
+                        letter-spacing:.09em; text-transform:uppercase;
+                        margin-bottom:3px; }}
+  .ops-panel {{ background:{CLR['surface']}; border:1px solid {CLR['border']};
+                border-radius:12px; padding:17px 18px; min-height:190px; }}
+  .panel-label {{ color:{CLR['text']}; font-size:.88rem; font-weight:700;
+                  margin-bottom:13px; }}
+  .health-row {{ display:flex; justify-content:space-between; padding:9px 0;
+                 border-bottom:1px solid rgba(31,56,82,.7); color:{CLR['subtext']};
+                 font-size:.8rem; }}
+  .health-row:last-child {{ border-bottom:0; }}
+  .health-value {{ color:{CLR['text']}; font-weight:650; }}
+  h1, h2, h3 {{ color: {CLR['text']} !important; font-family: "Segoe UI", sans-serif; }}
+  section[data-testid="stSidebar"] {{ background: {CLR['surface']} !important;
+                                      border-right: 1px solid {CLR['border']}; }}
+  section[data-testid="stSidebar"] .stMarkdown h2 {{ font-size:1.05rem; }}
+  div[data-testid="stPlotlyChart"] {{ border:1px solid {CLR['border']}; border-radius:12px;
+                                      overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,.12); }}
+  hr {{ border-color:{CLR['border']} !important; opacity:.75; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,7 +149,7 @@ def load_predictions() -> dict:
 
     for label, filename in [
         ("XGBoost + MAPIE",    "xgboost_predictions.csv"),
-        ("PINN + MC Dropout (calibrated)",  "pinn_predictions.csv"),
+        ("PINN + MC Dropout",  "pinn_predictions.csv"),
     ]:
         path = base / filename
         if path.exists():
@@ -134,7 +174,7 @@ def load_predictions() -> dict:
             "pi_hi_NOx":  nox_pred + 1.96 * nox_std,
         })
         datasets["XGBoost + MAPIE (simulated)"]   = fallback
-        datasets["PINN + MC Dropout (calibrated, simulated)"] = fallback.copy()
+        datasets["PINN + MC Dropout (simulated)"] = fallback.copy()
 
     return datasets
 
@@ -144,13 +184,17 @@ def load_predictions() -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_sidebar(datasets: dict) -> dict:
-    st.sidebar.markdown("## ⚙️ Soft Sensor Monitor")
-    st.sidebar.markdown("---")
+    st.sidebar.markdown("## Turbine Intelligence")
+    st.sidebar.caption("EMISSIONS CONTROL CENTER")
+    st.sidebar.divider()
 
-    model  = st.sidebar.selectbox("Model", list(datasets.keys()))
-    target = st.sidebar.selectbox("Target variable", ["CO", "NOx"])
+    st.sidebar.markdown("### Signal configuration")
+    model  = st.sidebar.selectbox("Inference model", list(datasets.keys()))
+    target = st.sidebar.segmented_control(
+        "Emission channel", ["CO", "NOx"], default="CO"
+    )
 
-    st.sidebar.markdown("### Alarm thresholds")
+    st.sidebar.markdown("### Operating limits")
     defaults     = {"CO": (5.0, 10.0), "NOx": (80.0, 100.0)}
     warn_lo, alarm_hi = defaults[target]
 
@@ -164,17 +208,32 @@ def render_sidebar(datasets: dict) -> dict:
         step=0.1, help="Red alarm fires above this value",
     )
 
-    st.sidebar.markdown("### Playback")
+    st.sidebar.markdown("### Timeline")
     window = st.sidebar.slider("Display window (samples)", 50, 500, 200,
                                 help="Number of recent samples shown in the live chart")
     live   = st.sidebar.toggle("Live simulation", value=False,
                                 help="Step through the test set one sample at a time")
+    show_reference = st.sidebar.toggle(
+        "Show reference signal", value=False,
+        help="Overlay held-out measurements for model review",
+    )
     speed  = st.sidebar.slider("Refresh interval (s)", 0.1, 2.0, 0.5, step=0.1,
                                 disabled=not live)
 
+    st.sidebar.divider()
+    if target == "NOx":
+        st.sidebar.markdown(
+            '<div class="drift-note"><strong>Model note</strong>'
+            'NOx shifted in the 2014–2015 holdout. Interpret wider intervals '
+            'as lower model confidence.</div>',
+            unsafe_allow_html=True,
+        )
+    st.sidebar.caption("Dataset · UCI GT 2011–2015\n\nUnits · mg/m³")
+
     return dict(model=model, target=target,
                 warn_thresh=warn_thresh, alarm_thresh=alarm_thresh,
-                window=window, live=live, speed=speed)
+                window=window, live=live, speed=speed,
+                show_reference=show_reference)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,29 +245,33 @@ def render_kpis(df: pd.DataFrame, target: str,
     pred  = df[f"y_pred_{target}"].iloc[idx]
     lo    = df[f"pi_lo_{target}"].iloc[idx]
     hi    = df[f"pi_hi_{target}"].iloc[idx]
-    true  = df[f"y_true_{target}"].iloc[idx]
+    width = hi - lo
+    widths = df[f"pi_hi_{target}"] - df[f"pi_lo_{target}"]
+    width_percentile = float((widths <= width).mean() * 100)
+    headroom = warn_thresh - pred
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric(f"Predicted {target}", f"{pred:.2f} mg/m³")
-    col2.metric("Interval half-width", f"± {(hi - lo) / 2:.2f} mg/m³")
-    col3.metric("Absolute error",      f"{abs(pred - true):.2f} mg/m³")
-    col4.metric("True value",          f"{true:.2f} mg/m³")
+    col2.metric("Calibrated range", f"{lo:.2f} – {hi:.2f}")
+    col3.metric("Warning headroom", f"{headroom:+.2f} mg/m³")
+    col4.metric("Interval percentile", f"P{width_percentile:.0f}")
 
     if pred >= alarm_thresh:
         st.markdown(
-            f'<div class="alarm-red">🔴 ALARM — {target} = {pred:.2f} mg/m³ '
-            f'exceeds alarm threshold ({alarm_thresh:.1f})</div>',
+            f'<div class="status-card alarm-red"><strong>CRITICAL · {target} LIMIT EXCEEDED</strong>'
+            f'<span>{pred:.2f} mg/m³ · limit {alarm_thresh:.1f}</span></div>',
             unsafe_allow_html=True,
         )
     elif pred >= warn_thresh:
         st.markdown(
-            f'<div class="alarm-amber">🟡 WARNING — {target} = {pred:.2f} mg/m³ '
-            f'exceeds warning threshold ({warn_thresh:.1f})</div>',
+            f'<div class="status-card alarm-amber"><strong>WARNING · ELEVATED {target}</strong>'
+            f'<span>{pred:.2f} mg/m³ · threshold {warn_thresh:.1f}</span></div>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            f'<div class="alarm-ok">✓ NORMAL — {target} within operating limits</div>',
+            f'<div class="status-card alarm-ok"><strong>NORMAL OPERATION</strong>'
+            f'<span>{target} remains within configured limits</span></div>',
             unsafe_allow_html=True,
         )
 
@@ -218,31 +281,33 @@ def render_kpis(df: pd.DataFrame, target: str,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_timeseries(df: pd.DataFrame, target: str, window: int,
-                      warn_thresh: float, alarm_thresh: float, end_idx: int):
+                      warn_thresh: float, alarm_thresh: float, end_idx: int,
+                      show_reference: bool = False):
     start = max(0, end_idx - window)
     sl    = df.iloc[start:end_idx]
     x     = np.arange(start, end_idx)
 
     fig = go.Figure()
 
-    # Filled nominal 95% uncertainty band
+    # Filled uncertainty band (95% PI)
     fig.add_trace(go.Scatter(
         x=np.concatenate([x, x[::-1]]),
         y=np.concatenate([sl[f"pi_hi_{target}"], sl[f"pi_lo_{target}"][::-1]]),
-        fill="toself", fillcolor="rgba(0,212,170,0.12)",
+        fill="toself", fillcolor="rgba(77,163,255,0.14)",
         line=dict(color="rgba(0,0,0,0)"),
-        name="95% interval", hoverinfo="skip",
+        name="95% PI", hoverinfo="skip",
     ))
-    fig.add_trace(go.Scatter(
-        x=x, y=sl[f"y_true_{target}"],
-        mode="lines", line=dict(color=CLR["red"], width=1.0),
-        name=f"True {target}",
-        hovertemplate=f"True: %{{y:.2f}} mg/m³<extra></extra>",
-    ))
+    if show_reference:
+        fig.add_trace(go.Scatter(
+            x=x, y=sl[f"y_true_{target}"],
+            mode="lines", line=dict(color=CLR["text"], width=1.1),
+            name="Reference",
+            hovertemplate=f"True: %{{y:.2f}} mg/m³<extra></extra>",
+        ))
     fig.add_trace(go.Scatter(
         x=x, y=sl[f"y_pred_{target}"],
-        mode="lines", line=dict(color=CLR["accent"], width=1.5),
-        name=f"Predicted {target}",
+        mode="lines", line=dict(color=CLR["blue"], width=2.0),
+        name="Soft-sensor estimate",
         hovertemplate=f"Pred: %{{y:.2f}} mg/m³<extra></extra>",
     ))
     fig.add_hline(y=alarm_thresh, line=dict(color=CLR["red"], width=1, dash="dash"),
@@ -253,15 +318,15 @@ def render_timeseries(df: pd.DataFrame, target: str, window: int,
     fig.update_layout(
         **PLOTLY_LAYOUT,
         title=dict(
-            text=f"{target} — Soft Sensor Prediction with 95% Calibrated Interval",
-            font=dict(color=CLR["accent"], size=13),
+            text=f"{target} trend and prediction interval",
+            font=dict(color=CLR["text"], size=15), x=0.025,
         ),
         yaxis_title=f"{target} [mg/m³]",
         xaxis_title="Sample index (test set)",
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=CLR["text"])),
-        height=340,
+        height=380,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def render_bottom_row(df: pd.DataFrame, target: str, end_idx: int):
@@ -273,25 +338,25 @@ def render_bottom_row(df: pd.DataFrame, target: str, end_idx: int):
         fig_scatter.add_trace(go.Scatter(
             x=sl[f"y_true_{target}"], y=sl[f"y_pred_{target}"],
             mode="markers",
-            marker=dict(color=CLR["accent"], size=3, opacity=0.3),
+            marker=dict(color=CLR["blue"], size=4, opacity=0.32),
             hovertemplate="True: %{x:.2f}<br>Pred: %{y:.2f}<extra></extra>",
         ))
         lo = sl[f"y_true_{target}"].min()
         hi = sl[f"y_true_{target}"].max()
         fig_scatter.add_trace(go.Scatter(
             x=[lo, hi], y=[lo, hi],
-            mode="lines", line=dict(color=CLR["red"], dash="dash", width=1.5),
+            mode="lines", line=dict(color=CLR["subtext"], dash="dash", width=1.2),
             name="Perfect fit",
         ))
         fig_scatter.update_layout(
             **PLOTLY_LAYOUT,
-            title=dict(text=f"{target} — Predicted vs Actual",
-                       font=dict(color=CLR["accent"], size=12)),
+            title=dict(text=f"{target} estimate fidelity",
+                       font=dict(color=CLR["text"], size=14), x=0.04),
             xaxis_title=f"True {target} [mg/m³]",
             yaxis_title=f"Predicted {target} [mg/m³]",
-            height=300,
+            height=320,
         )
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        st.plotly_chart(fig_scatter, width="stretch")
 
     with col_right:
         # Rolling mean of PI width highlights confidence drift over time.
@@ -314,14 +379,65 @@ def render_bottom_row(df: pd.DataFrame, target: str, end_idx: int):
         fig_width.update_layout(
             **PLOTLY_LAYOUT,
             title=dict(
-                text=f"{target} — 95% Interval Width over Time",
-                font=dict(color=CLR["accent"], size=12),
+                text=f"{target} uncertainty trend",
+                font=dict(color=CLR["text"], size=14), x=0.04,
             ),
             yaxis_title="PI width [mg/m³]",
             xaxis_title="Sample index",
-            height=300,
+            height=320,
         )
-        st.plotly_chart(fig_width, use_container_width=True)
+        st.plotly_chart(fig_width, width="stretch")
+
+
+def render_control_summary(df: pd.DataFrame, target: str, end_idx: int,
+                           warn_thresh: float, alarm_thresh: float):
+    """Compact operator summary; detailed validation charts stay off the console."""
+    sl = df.iloc[:end_idx]
+    recent = sl.tail(min(500, len(sl))).copy()
+    pred_col = f"y_pred_{target}"
+    width = recent[f"pi_hi_{target}"] - recent[f"pi_lo_{target}"]
+    warning_count = int(((recent[pred_col] >= warn_thresh) &
+                         (recent[pred_col] < alarm_thresh)).sum())
+    alarm_count = int((recent[pred_col] >= alarm_thresh).sum())
+    coverage = float(((recent[f"y_true_{target}"] >= recent[f"pi_lo_{target}"]) &
+                      (recent[f"y_true_{target}"] <= recent[f"pi_hi_{target}"])).mean())
+
+    left, right = st.columns([1.35, 1], gap="medium")
+    with left:
+        st.markdown("#### Recent limit events")
+        events = recent.loc[recent[pred_col] >= warn_thresh, [pred_col]].tail(5).copy()
+        if events.empty:
+            st.markdown(
+                '<div class="ops-panel"><div class="panel-label">Event queue</div>'
+                '<div style="color:#91a4b7;font-size:.82rem;padding-top:35px;'
+                'text-align:center">No warning or alarm events in the recent window</div></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            events.insert(0, "Sample", events.index)
+            events["Severity"] = np.where(
+                events[pred_col] >= alarm_thresh, "ALARM", "WARNING"
+            )
+            events.rename(columns={pred_col: f"{target} (mg/m³)"}, inplace=True)
+            events[f"{target} (mg/m³)"] = events[f"{target} (mg/m³)"].round(2)
+            st.dataframe(events.iloc[::-1], hide_index=True, width="stretch", height=190)
+
+    with right:
+        reliability = "Nominal" if coverage >= 0.90 else "Review"
+        st.markdown(
+            '<div class="ops-panel"><div class="panel-label">System health · recent 500</div>'
+            f'<div class="health-row"><span>Prediction coverage</span>'
+            f'<span class="health-value">{coverage:.1%}</span></div>'
+            f'<div class="health-row"><span>Median interval width</span>'
+            f'<span class="health-value">{width.median():.2f} mg/m³</span></div>'
+            f'<div class="health-row"><span>Warning events</span>'
+            f'<span class="health-value">{warning_count}</span></div>'
+            f'<div class="health-row"><span>Alarm events</span>'
+            f'<span class="health-value">{alarm_count}</span></div>'
+            f'<div class="health-row"><span>Model status</span>'
+            f'<span class="health-value">{reliability}</span></div></div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -329,18 +445,24 @@ def render_bottom_row(df: pd.DataFrame, target: str, end_idx: int):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    st.markdown("# ⚙️ Soft Sensor Monitor")
     st.markdown(
-        f'<span style="color:{CLR["subtext"]}; font-family:monospace; font-size:0.85rem;">'
-        "UCI Gas Turbine · CO & NOx · XGBoost/MAPIE + calibrated PINN/MC-Dropout</span>",
+        '<div class="live-pill"><span class="live-dot"></span>MONITORING ONLINE</div>'
+        '<div class="eyebrow">Operations / Emissions intelligence</div>'
+        '<div class="hero-title">Gas Turbine Soft Sensor</div>'
+        '<div class="hero-copy">Model-assisted CO and NOx monitoring with calibrated uncertainty</div>',
         unsafe_allow_html=True,
     )
-    st.markdown("---")
+    st.divider()
 
     datasets = load_predictions()
     cfg      = render_sidebar(datasets)
     df       = datasets[cfg["model"]]
     n        = len(df)
+
+    st.caption(
+        f"ACTIVE MODEL  ·  {cfg['model'].upper()}     |     "
+        f"CHANNEL  ·  {cfg['target']}     |     RECORDS  ·  {n:,}"
+    )
 
     if "sim_idx" not in st.session_state:
         st.session_state.sim_idx = cfg["window"]
@@ -352,19 +474,23 @@ def main():
         render_kpis(df, cfg["target"], cfg["warn_thresh"],
                     cfg["alarm_thresh"], idx - 1)
         render_timeseries(df, cfg["target"], cfg["window"],
-                          cfg["warn_thresh"], cfg["alarm_thresh"], idx)
-        render_bottom_row(df, cfg["target"], idx)
+                          cfg["warn_thresh"], cfg["alarm_thresh"], idx,
+                          cfg["show_reference"])
+        render_control_summary(df, cfg["target"], idx,
+                               cfg["warn_thresh"], cfg["alarm_thresh"])
         st.session_state.sim_idx = idx + 1 if idx < n else cfg["window"]
         time.sleep(cfg["speed"])
         st.rerun()
     else:
-        idx = st.slider("Sample position", cfg["window"], n, n,
+        idx = st.slider("Historical position", cfg["window"], n, n,
                         help="Drag to inspect any point in the test set")
         render_kpis(df, cfg["target"], cfg["warn_thresh"],
                     cfg["alarm_thresh"], idx - 1)
         render_timeseries(df, cfg["target"], cfg["window"],
-                          cfg["warn_thresh"], cfg["alarm_thresh"], idx)
-        render_bottom_row(df, cfg["target"], idx)
+                          cfg["warn_thresh"], cfg["alarm_thresh"], idx,
+                          cfg["show_reference"])
+        render_control_summary(df, cfg["target"], idx,
+                               cfg["warn_thresh"], cfg["alarm_thresh"])
 
 
 if __name__ == "__main__":
