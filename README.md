@@ -165,7 +165,7 @@ python -c "from src.training import run_pinn; run_pinn()"
 # 3. Generate the numerical comparison only
 python compare_models.py
 
-# 5. Launch dashboard
+# 4. Launch dashboard
 streamlit run dashboard/app.py
 ```
 
