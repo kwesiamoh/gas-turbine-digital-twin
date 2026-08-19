@@ -92,7 +92,7 @@ The split-conformal guarantee depends on calibration and deployment observations
 
 ---
 
-## 📊 Scientific Results
+## 📊 Results
 
 ### 1️⃣ Prediction Fidelity
 
@@ -103,6 +103,8 @@ Run `compare_models.py` after training to generate the reproducible RMSE, MAE, R
 ### 2️⃣ Uncertainty Reliability
 
 Use the generated comparison metrics to check empirical coverage and interval width for the current run. MAPIE intervals are conformalized on a held-out chronological block; MC-Dropout intervals are approximate and should be judged by their measured held-out coverage before any deployment claim is made.
+
+<img width="2337" height="1790" alt="project-1-02" src="https://github.com/user-attachments/assets/951f8260-c8b4-4baa-a1b0-6714c82208cc" />
 
 ---
 
@@ -115,6 +117,9 @@ A live monitoring dashboard built with **Streamlit + Plotly**:
 - Operator-focused trend, limit-event queue, and model-health summary
 - Optional reference overlay for engineering review
 - Live simulation mode stepping through the test set
+
+<img width="2535" height="1313" alt="project-1-01" src="https://github.com/user-attachments/assets/39349c0e-5404-40f6-bc16-f1480d0b5433" />
+
 
 ---
 
