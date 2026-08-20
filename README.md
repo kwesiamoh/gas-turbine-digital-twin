@@ -133,7 +133,6 @@ project/
 ├── data/
 │   ├── raw/                    # Unmodified UCI download
 │   └── processed/              # Validated data + physics features
-├── notebooks/                  # EDA and experiments
 ├── models/                     # Saved model artefacts (.joblib, .pt)
 ├── src/
 │   ├── preprocessing.py        # Data fetch, validation, train/test split
@@ -143,9 +142,6 @@ project/
 │   └── training.py             # Full training pipelines for both models
 ├── dashboard/
 │   └── app.py                  # Streamlit monitoring dashboard
-├── results/
-│   ├── scientific_plots.py     # Explicit publication-figure entry point
-│   └── *.csv / *.png / *.pdf   # Generated metrics and figure outputs
 ├── build_dataset.py            # Data pipeline entry point
 ├── compare_models.py           # Side-by-side model comparison
 └── requirements.txt
@@ -172,10 +168,7 @@ python -c "from src.training import run_pinn; run_pinn()"
 # 3. Generate the numerical comparison only
 python compare_models.py
 
-# 4. Generate publication figures explicitly
-python results/scientific_plots.py
-
-# 5. Launch dashboard
+# 4. Launch dashboard
 streamlit run dashboard/app.py
 ```
 
@@ -224,6 +217,5 @@ dedicated chronological block that is excluded from fitting and early stopping.
 - Added leakage-safe normalized conformal calibration for neural-network MC-Dropout intervals.
 - Documented the 2014–2015 NOx concept shift and deployment limitation.
 - Redesigned the Streamlit interface as an operator-focused control-room dashboard.
-- Separated numerical comparison from scientific figure generation.
 - Added publication-ready PNG and vector PDF outputs with normalized metrics and a colorblind-safe style.
 - Added focused uncertainty-calibration tests and Windows/headless execution fixes.
