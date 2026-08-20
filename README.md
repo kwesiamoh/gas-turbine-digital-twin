@@ -94,7 +94,7 @@ The split-conformal guarantee depends on calibration and deployment observations
 
 ---
 
-## 📊 Scientific Results
+## 📊 Results
 
 ### 1️⃣ Prediction Fidelity
 
@@ -105,12 +105,6 @@ Run `compare_models.py` after training to generate the reproducible RMSE, MAE, R
 ### 2️⃣ Uncertainty Reliability
 
 Use the generated comparison metrics to check empirical coverage and interval width for the current run. MAPIE intervals are conformalized on a held-out chronological block; MC-Dropout intervals are approximate and should be judged by their measured held-out coverage before any deployment claim is made.
-
----
-
-### 3️⃣ Publication Figures
-
-Run `python results/scientific_plots.py` explicitly when figures are required. It produces a concise four-panel comparison of normalized prediction error, explained variance, interval calibration, and interval sharpness. Outputs are saved as a 300-DPI PNG and a vector PDF using a colorblind-safe, grayscale-compatible style.
 
 ---
 
@@ -212,10 +206,9 @@ dedicated chronological block that is excluded from fitting and early stopping.
 
 ## 📝 Changelog
 
-### 2026-08-19
+### 2026-08-20
 
 - Added leakage-safe normalized conformal calibration for neural-network MC-Dropout intervals.
 - Documented the 2014–2015 NOx concept shift and deployment limitation.
 - Redesigned the Streamlit interface as an operator-focused control-room dashboard.
-- Added publication-ready PNG and vector PDF outputs with normalized metrics and a colorblind-safe style.
 - Added focused uncertainty-calibration tests and Windows/headless execution fixes.
