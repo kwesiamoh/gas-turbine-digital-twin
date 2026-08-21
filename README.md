@@ -114,8 +114,9 @@ An operator-style monitoring and historical demonstration dashboard built with *
 
 - Emission estimates with reported uncertainty bands from saved model outputs
 - Configurable alarm and warning thresholds
+- Early approaching-limit assessment using recent estimate direction, threshold headroom, and the upper prediction bound; explicitly not a future forecast
 - Operator-focused trend, limit-event queue, and model-health summary
-- Optional reference overlay for engineering review
+- Visible measured-reference overlay in Emissions Analysis for held-out estimate validation
 - Separate operator Overview, historical Live Demo, and engineering Emissions Analysis views
 - Start, pause, and reset controls for portfolio demonstration playback
 - First-launch spotlight tour with action-based steps, contextual tooltips, and a reusable restart control
@@ -238,6 +239,11 @@ The dashboard redesign and parts of the supporting documentation were developed 
 - Rebuilt the Streamlit dashboard in a professional light control-room style with robust top-level navigation and model settings separated from the operator view.
 - Added Overview, historical Live Demo, and Emissions Analysis views driven by available turbine measurements and model outputs.
 - Added the turbine equipment panel, operational dials, sensor tags, alert states, and clearly labelled historical-data playback controls.
+- Simplified playback to one stateful Start/Pause control and reduced non-essential status colour using high-performance HMI principles.
+- Replaced oversized semicircular gauges with compact range indicators and clarified measured versus model-estimated values.
+- Renamed the heuristic ramp label to Recent TEY Trend and added a data-backed soft-sensor interval summary.
+- Added a non-forecast early-risk assessment and documented its uncertainty/headroom/trend logic throughout the dashboard tour.
+- Moved the measured-reference overlay from hidden settings into the Emissions Analysis validation toolbar.
 - Added a first-launch spotlight tour with action-based steps, progress, Back/Next/Skip controls, contextual tooltips, completion guidance, and a restart option.
 - Separated scientific figure generation from training and comparison so figures are produced only when the dedicated plotting script is run.
 - Updated the README with dashboard guidance, changelog entries, third-party attribution, and an AI-assisted development disclosure.

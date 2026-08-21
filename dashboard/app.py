@@ -103,18 +103,12 @@ st.markdown(f"""
   .status-card span:last-child {{ font-weight: 450; opacity: .88; }}
   .alarm-red   {{ background:#fff1f1; border-color:#e5a0a0; color:{CLR['red']}; }}
   .alarm-amber {{ background:#fff8e6; border-color:#dfc27b; color:{CLR['amber']}; }}
-  .alarm-ok    {{ background:#edf8ef; border-color:#9bc9a3; color:{CLR['accent']}; }}
+  .alarm-ok    {{ background:#f1f4f7; border-color:{CLR['border']}; color:{CLR['text']}; }}
   .eyebrow {{ color:{CLR['accent']}; letter-spacing:.14em; text-transform:uppercase;
               font-size:.78rem; font-weight:750; margin-bottom:.35rem; }}
   .hero-title {{ color:{CLR['text']}; font-size:2rem; line-height:1.15; font-weight:680;
                  letter-spacing:-.03em; margin:0; }}
   .hero-copy {{ color:{CLR['subtext']}; margin-top:.45rem; font-size:1rem; }}
-  .live-pill {{ display:inline-flex; align-items:center; gap:7px; float:right;
-                color:{CLR['accent']}; background:#edf8ef;
-                border:1px solid #9bc9a3; border-radius:99px;
-                padding:7px 12px; font-size:.8rem; font-weight:700; letter-spacing:.06em; }}
-  .live-dot {{ width:7px; height:7px; border-radius:50%; background:{CLR['accent']};
-               box-shadow:0 0 0 4px rgba(35,196,168,.12); }}
   .drift-note {{ margin-top:.75rem; padding:10px 12px; border-radius:6px;
                  color:{CLR['subtext']}; background:#eef5ff;
                  border:1px solid #b7cff2; font-size:.84rem;
@@ -155,6 +149,13 @@ st.markdown(f"""
   .flow-strip {{ display:flex; align-items:center; justify-content:center; gap:7px;
                  color:{CLR['subtext']}; font-size:.72rem; letter-spacing:.05em;
                  margin-top:9px; }}
+  .soft-sensor-strip {{ display:grid; grid-template-columns:1.15fr 1fr 1fr .8fr;
+                        gap:1px; margin:2px 0 14px; background:{CLR['border']};
+                        border:1px solid {CLR['border']}; border-radius:5px; overflow:hidden; }}
+  .soft-sensor-cell {{ background:{CLR['surface']}; padding:11px 13px; }}
+  .soft-sensor-label {{ color:{CLR['subtext']}; font-size:.72rem; letter-spacing:.07em;
+                        text-transform:uppercase; margin-bottom:4px; }}
+  .soft-sensor-reading {{ color:{CLR['text']}; font-size:1rem; font-weight:700; }}
   .flow-arrow {{ color:{CLR['blue']}; }}
   .control-bar {{ background:{CLR['surface']}; border:1px solid {CLR['border']};
                   border-radius:6px; padding:9px 12px 5px; margin:12px 0 16px; }}
@@ -212,6 +213,7 @@ st.markdown(f"""
   }}
   @media (max-width:800px) {{
       .sensor-grid {{ grid-template-columns:repeat(2,1fr); }}
+      .soft-sensor-strip {{ grid-template-columns:repeat(2,1fr); }}
       .block-container {{ padding-left:.65rem !important; padding-right:.65rem !important; }}
   }}
 </style>
@@ -303,10 +305,10 @@ TOUR_STEPS = [
     },
     {
         "title": "Inspect the operating overview",
-        "copy": "The TEY dial shows measured turbine energy yield. CO and NOx dials show "
-                "soft-sensor estimates at the same operating point. Green, amber and red "
-                "bands correspond to configured operating limits.",
-        "tip": "These are contemporaneous estimates—not future forecasts.",
+        "copy": "The compact TEY range shows measured turbine energy yield. CO and NOx ranges "
+                "show model estimates at the same operating point. The early-risk assessment "
+                "combines recent estimate direction, warning headroom and the upper 95% prediction bound.",
+        "tip": "It can flag an approaching-limit condition, but it is not a future exceedance forecast.",
     },
     {
         "title": "Open the Live Demo",
@@ -317,16 +319,18 @@ TOUR_STEPS = [
     {
         "title": "Run the historical simulation",
         "copy": "This view replays the chronological test dataset as an operator demonstration. "
-                "The dials, turbine state, sensor tags and emissions trend advance together "
+                "The range indicators, turbine state, sensor tags and emissions trend advance together "
                 "using recorded values and model outputs.",
-        "tip": "Action: press START, observe the instruments update, then press PAUSE.",
+        "tip": "Action: press START DEMO, observe the instruments update, then use the same button to pause.",
     },
     {
         "title": "Review emissions analysis",
         "copy": "This engineering-review view focuses on the selected emission channel, its "
                 "calibrated prediction interval, warning headroom, recent events and measured "
-                "coverage of the interval.",
-        "tip": "Action: select Emissions Analysis to inspect model reliability.",
+                "coverage of the interval. Warning and alarm states use the current model estimate; "
+                "early-risk states also consider uncertainty and recent direction. Use MEASURED "
+                "REFERENCE to overlay held-out observations against the estimate.",
+        "tip": "Action: select Emissions Analysis, then enable the validation overlay when comparison is needed.",
     },
     {
         "title": "You are ready",
@@ -346,7 +350,8 @@ def render_tour_dialog():
             '<div class="tour-kicker">Welcome</div>'
             '<div class="tour-title">Take a guided interface tour?</div>'
             '<div class="tour-copy">This short guide explains the vital operating views, '
-            'data-driven dials, turbine telemetry, emissions analysis and model settings.</div>',
+            'range indicators, turbine telemetry, early-limit risk, uncertainty, emissions analysis '
+            'and model settings.</div>',
             unsafe_allow_html=True,
         )
         take_col, skip_col = st.columns(2)
@@ -442,10 +447,6 @@ def _render_controls_content(datasets: dict) -> dict:
                 "Demo frame interval (seconds)", 0.2, 2.0, 0.8, step=0.1,
                 help="Playback speed for the historical-data demonstration",
             )
-            show_reference = st.toggle(
-                "Show measured reference", value=False,
-                help="Engineering review only; hidden in the operator view",
-            )
             if target == "NOx":
                 st.markdown(
                     '<div class="drift-note"><strong>Model note</strong>'
@@ -456,8 +457,7 @@ def _render_controls_content(datasets: dict) -> dict:
 
     return dict(view=view, model=model, target=target,
                 warn_thresh=warn_thresh, alarm_thresh=alarm_thresh,
-                window=window, demo_interval=demo_interval,
-                show_reference=show_reference)
+                window=window, demo_interval=demo_interval)
 
 
 def render_controls(datasets: dict) -> dict:
@@ -476,6 +476,47 @@ def render_controls(datasets: dict) -> dict:
 #  KPI CARDS
 # ─────────────────────────────────────────────────────────────────────────────
 
+def assess_limit_risk(df: pd.DataFrame, target: str, idx: int,
+                      warn_thresh: float, alarm_thresh: float) -> dict:
+    """Assess current/near-limit risk without claiming a future forecast."""
+    pred = float(df[f"y_pred_{target}"].iloc[idx])
+    hi = float(df[f"pi_hi_{target}"].iloc[idx])
+    series = df[f"y_pred_{target}"]
+    start = max(0, idx - 9)
+    recent_rate = float(series.iloc[start:idx + 1].diff().median())
+    if np.isnan(recent_rate):
+        recent_rate = 0.0
+    noise_floor = float(series.diff().abs().median())
+    rising = recent_rate > noise_floor
+    headroom = warn_thresh - pred
+    near_margin = max(0.1 * warn_thresh, 0.2 * (alarm_thresh - warn_thresh))
+
+    if pred >= alarm_thresh:
+        label, css_class = "ALARM · ESTIMATE EXCEEDS LIMIT", "alarm-red"
+        explanation = f"Current estimate exceeds the {alarm_thresh:.1f} mg/m³ alarm limit."
+    elif pred >= warn_thresh:
+        label, css_class = "WARNING · ESTIMATE ELEVATED", "alarm-amber"
+        explanation = f"Current estimate exceeds the {warn_thresh:.1f} mg/m³ warning threshold."
+    elif hi >= alarm_thresh:
+        label, css_class = "EARLY RISK · INTERVAL REACHES ALARM", "alarm-amber"
+        explanation = "The current estimate is below warning, but its upper 95% prediction bound reaches the alarm limit."
+    elif hi >= warn_thresh:
+        label, css_class = "APPROACHING LIMIT · INTERVAL REACHES WARNING", "alarm-amber"
+        explanation = "The current estimate is below warning, but its upper 95% prediction bound reaches the warning threshold."
+    elif rising and headroom <= near_margin:
+        label, css_class = "APPROACHING LIMIT · RISING NEAR WARNING", "alarm-amber"
+        explanation = "The recent estimate is rising and has limited warning-threshold headroom."
+    else:
+        label, css_class = "NORMAL · NO NEAR-LIMIT INDICATION", "alarm-ok"
+        explanation = "The estimate and upper prediction bound remain below warning."
+
+    direction = "RISING" if rising else "FALLING" if recent_rate < -noise_floor else "STABLE"
+    return {
+        "label": label, "css_class": css_class, "explanation": explanation,
+        "direction": direction, "recent_rate": recent_rate, "headroom": headroom,
+    }
+
+
 def render_kpis(df: pd.DataFrame, target: str,
                 warn_thresh: float, alarm_thresh: float, idx: int):
     pred  = df[f"y_pred_{target}"].iloc[idx]
@@ -485,6 +526,7 @@ def render_kpis(df: pd.DataFrame, target: str,
     widths = df[f"pi_hi_{target}"] - df[f"pi_lo_{target}"]
     width_percentile = float((widths <= width).mean() * 100)
     headroom = warn_thresh - pred
+    risk = assess_limit_risk(df, target, idx, warn_thresh, alarm_thresh)
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric(f"Predicted {target}", f"{pred:.2f} mg/m³")
@@ -492,24 +534,12 @@ def render_kpis(df: pd.DataFrame, target: str,
     col3.metric("Warning headroom", f"{headroom:+.2f} mg/m³")
     col4.metric("Interval percentile", f"P{width_percentile:.0f}")
 
-    if pred >= alarm_thresh:
-        st.markdown(
-            f'<div class="status-card alarm-red"><strong>CRITICAL · {target} LIMIT EXCEEDED</strong>'
-            f'<span>{pred:.2f} mg/m³ · limit {alarm_thresh:.1f}</span></div>',
-            unsafe_allow_html=True,
-        )
-    elif pred >= warn_thresh:
-        st.markdown(
-            f'<div class="status-card alarm-amber"><strong>WARNING · ELEVATED {target}</strong>'
-            f'<span>{pred:.2f} mg/m³ · threshold {warn_thresh:.1f}</span></div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f'<div class="status-card alarm-ok"><strong>NORMAL OPERATION</strong>'
-            f'<span>{target} remains within configured limits</span></div>',
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        f'<div class="status-card {risk["css_class"]}"><strong>{risk["label"]}</strong>'
+        f'<span>{risk["explanation"]} Recent direction: {risk["direction"]} '
+        f'({risk["recent_rate"]:+.2f} mg/m³/sample). This is an early-risk assessment, not a future forecast.</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -575,7 +605,7 @@ def render_equipment_panel(df: pd.DataFrame, idx: int, target: str,
     elif pred >= warn_thresh:
         state, state_color = "WARNING", CLR["amber"]
     else:
-        state, state_color = "RUNNING · NORMAL", CLR["accent"]
+        state, state_color = "NORMAL", CLR["subtext"]
 
     def value(name: str, unit: str, decimals: int = 1) -> str:
         raw = row.get(name, np.nan)
@@ -615,37 +645,43 @@ def render_equipment_panel(df: pd.DataFrame, idx: int, target: str,
 
 
 def calculate_ramp_state(df: pd.DataFrame, idx: int) -> tuple[str, float]:
-    """Classify TEY movement using a tolerance learned from historical changes."""
+    """Describe recent TEY direction using a historical-change deadband."""
     changes = df["TEY"].diff().dropna()
     tolerance = float(changes.abs().median())
     start = max(1, idx - 9)
     local_change = float(df["TEY"].iloc[start:idx + 1].diff().median())
     if local_change > tolerance:
-        return "RAMPING UP", local_change
+        return "INCREASING", local_change
     if local_change < -tolerance:
-        return "RAMPING DOWN", local_change
-    return "STEADY LOAD", local_change
+        return "DECREASING", local_change
+    return "STABLE", local_change
 
 
-def _gauge(title: str, value: float, minimum: float, maximum: float,
-           unit: str, warn: float | None = None,
-           alarm: float | None = None) -> go.Figure:
-    """Build a compact control-room dial from observed or configured bounds."""
-    steps = []
+def _range_indicator(title: str, value: float, minimum: float, maximum: float,
+                     unit: str, warn: float | None = None,
+                     alarm: float | None = None) -> go.Figure:
+    """Build a compact HP-HMI range indicator with semantic limit colors."""
+    steps = [{"range": [minimum, maximum], "color": "#e6ebef"}]
+    bar_color = "#657383"
     if warn is not None and alarm is not None:
         steps = [
-            {"range": [minimum, warn], "color": "rgba(115,191,105,.22)"},
-            {"range": [warn, alarm], "color": "rgba(242,204,12,.25)"},
-            {"range": [alarm, maximum], "color": "rgba(242,73,92,.25)"},
+            {"range": [minimum, warn], "color": "#e6ebef"},
+            {"range": [warn, alarm], "color": "#f6edcf"},
+            {"range": [alarm, maximum], "color": "#f4d7d7"},
         ]
+        if value >= alarm:
+            bar_color = CLR["red"]
+        elif value >= warn:
+            bar_color = CLR["amber"]
     fig = go.Figure(go.Indicator(
-        mode="gauge+number",
+        mode="number+gauge",
         value=value,
-        number={"suffix": f" {unit}", "font": {"size": 22, "color": CLR["text"]}},
+        number={"suffix": f" {unit}", "font": {"size": 21, "color": CLR["text"]}},
         title={"text": title, "font": {"size": 13, "color": CLR["subtext"]}},
         gauge={
+            "shape": "bullet",
             "axis": {"range": [minimum, maximum], "tickfont": {"size": 10, "color": CLR["subtext"]}},
-            "bar": {"color": CLR["blue"], "thickness": .22},
+            "bar": {"color": bar_color, "thickness": .42},
             "bgcolor": CLR["surface2"], "borderwidth": 0,
             "steps": steps,
             "threshold": ({"line": {"color": CLR["red"], "width": 2},
@@ -653,8 +689,8 @@ def _gauge(title: str, value: float, minimum: float, maximum: float,
         },
     ))
     fig.update_layout(
-        paper_bgcolor=CLR["surface"], margin=dict(l=18, r=18, t=38, b=8),
-        height=205, font=dict(family="Inter, Segoe UI, sans-serif"),
+        paper_bgcolor=CLR["surface"], margin=dict(l=26, r=26, t=40, b=22),
+        height=145, font=dict(family="Inter, Segoe UI, sans-serif"),
     )
     return fig
 
@@ -666,12 +702,12 @@ def render_operating_overview(df: pd.DataFrame, idx: int, target: str,
     ramp_state, tey_change = calculate_ramp_state(df, idx)
     year = int(row.get("year", 0))
 
-    cols = st.columns(5)
-    cols[0].metric("Operating state", ramp_state, f"{tey_change:+.2f} MWh/sample")
+    st.caption(f"HISTORICAL DATASET · YEAR {year}" if year else "HISTORICAL DATASET")
+    cols = st.columns(4)
+    cols[0].metric("Recent TEY trend", ramp_state, f"{tey_change:+.2f} MWh/sample")
     cols[1].metric("Energy yield · TEY", f"{row['TEY']:.1f} MWh")
     cols[2].metric("Turbine inlet · TIT", f"{row['TIT']:.1f} °C")
     cols[3].metric("Exhaust temperature · TAT", f"{row['TAT']:.1f} °C")
-    cols[4].metric("Historical year", str(year) if year else "Dataset")
 
     co_warn, co_alarm = (warn_thresh, alarm_thresh) if target == "CO" else (5.0, 10.0)
     nox_warn, nox_alarm = (warn_thresh, alarm_thresh) if target == "NOx" else (80.0, 100.0)
@@ -679,16 +715,38 @@ def render_operating_overview(df: pd.DataFrame, idx: int, target: str,
     co_max = max(co_alarm * 1.2, float(df["y_pred_CO"].quantile(.99)))
     nox_max = max(nox_alarm * 1.2, float(df["y_pred_NOx"].quantile(.99)))
 
-    gauge_cols = st.columns(3, gap="medium")
-    with gauge_cols[0]:
-        st.plotly_chart(_gauge("ENERGY YIELD · TEY", float(row["TEY"]),
-                               tey_min, tey_max, "MWh"), width="stretch")
-    with gauge_cols[1]:
-        st.plotly_chart(_gauge("SOFT-SENSOR · CO", float(row["y_pred_CO"]),
-                               0, co_max, "mg/m³", co_warn, co_alarm), width="stretch")
-    with gauge_cols[2]:
-        st.plotly_chart(_gauge("SOFT-SENSOR · NOx", float(row["y_pred_NOx"]),
-                               0, nox_max, "mg/m³", nox_warn, nox_alarm), width="stretch")
+    indicator_cols = st.columns(3, gap="medium")
+    with indicator_cols[0]:
+        st.plotly_chart(_range_indicator("MEASURED · ENERGY YIELD", float(row["TEY"]),
+                                         tey_min, tey_max, "MWh"), width="stretch")
+    with indicator_cols[1]:
+        st.plotly_chart(_range_indicator("MODEL ESTIMATE · CO", float(row["y_pred_CO"]),
+                                         0, co_max, "mg/m³", co_warn, co_alarm), width="stretch")
+    with indicator_cols[2]:
+        st.plotly_chart(_range_indicator("MODEL ESTIMATE · NOx", float(row["y_pred_NOx"]),
+                                         0, nox_max, "mg/m³", nox_warn, nox_alarm), width="stretch")
+
+    pred = float(row[f"y_pred_{target}"])
+    pi_lo = float(row[f"pi_lo_{target}"])
+    pi_hi = float(row[f"pi_hi_{target}"])
+    risk = assess_limit_risk(df, target, idx, warn_thresh, alarm_thresh)
+    st.markdown(
+        '<div class="soft-sensor-strip">'
+        f'<div class="soft-sensor-cell"><div class="soft-sensor-label">{target} soft sensor</div>'
+        f'<div class="soft-sensor-reading">{pred:.2f} mg/m³ · MODEL ESTIMATE</div></div>'
+        f'<div class="soft-sensor-cell"><div class="soft-sensor-label">95% prediction interval</div>'
+        f'<div class="soft-sensor-reading">{pi_lo:.2f}–{pi_hi:.2f} mg/m³</div></div>'
+        f'<div class="soft-sensor-cell"><div class="soft-sensor-label">Interval width</div>'
+        f'<div class="soft-sensor-reading">{pi_hi - pi_lo:.2f} mg/m³</div></div>'
+        f'<div class="soft-sensor-cell"><div class="soft-sensor-label">Early-risk assessment</div>'
+        f'<div class="soft-sensor-reading">{risk["label"]}</div></div></div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        f'{risk["explanation"]} Recent {target} direction: {risk["direction"]} '
+        f'({risk["recent_rate"]:+.2f} mg/m³/sample). '
+        "This combines current uncertainty, threshold headroom and recent direction; it is not a future forecast."
+    )
 
     render_equipment_panel(df, idx, target, warn_thresh, alarm_thresh)
 
@@ -810,7 +868,6 @@ def render_control_summary(df: pd.DataFrame, target: str, end_idx: int,
 
 def main():
     st.markdown(
-        '<div class="live-pill"><span class="live-dot"></span>MONITORING ONLINE</div>'
         '<div class="eyebrow">Operations / Emissions intelligence</div>'
         '<div class="hero-title">Gas Turbine Soft Sensor</div>'
         '<div class="hero-copy">Model-assisted CO and NOx monitoring with calibrated uncertainty</div>',
@@ -860,15 +917,23 @@ def main():
                 "This is not a live plant connection.",
                 icon="ℹ️",
             )
-            start_col, pause_col, reset_col, progress_col = st.columns([1, 1, 1, 4])
-            if start_col.button("START", type="primary", width="stretch",
-                                help="Begin playback of chronological recorded test samples"):
-                st.session_state.demo_running = True
+            toggle_col, reset_col, progress_col = st.columns([1.35, 1, 4.65])
+            if st.session_state.demo_running:
+                st.markdown(
+                    "<style>.st-key-demo_toggle button {background:#b7791f !important; "
+                    "border-color:#8c5d18 !important; color:#fff !important;}</style>",
+                    unsafe_allow_html=True,
+                )
+            toggle_label = "PAUSE DEMO" if st.session_state.demo_running else "START DEMO"
+            toggle_help = (
+                "Pause playback at the current historical sample"
+                if st.session_state.demo_running
+                else "Begin playback of chronological recorded test samples"
+            )
+            if toggle_col.button(toggle_label, type="primary", width="stretch",
+                                 help=toggle_help, key="demo_toggle"):
+                st.session_state.demo_running = not st.session_state.demo_running
                 st.session_state.demo_ever_started = True
-                st.rerun()
-            if pause_col.button("PAUSE", width="stretch",
-                                help="Pause playback at the current historical sample"):
-                st.session_state.demo_running = False
                 st.rerun()
             if reset_col.button("RESET", width="stretch",
                                 help="Return the demonstration to its first display window"):
@@ -882,7 +947,7 @@ def main():
                                   cfg["warn_thresh"], cfg["alarm_thresh"])
         render_timeseries(df, cfg["target"], cfg["window"],
                           cfg["warn_thresh"], cfg["alarm_thresh"], idx,
-                          cfg["show_reference"])
+                          False)
 
         if st.session_state.demo_running:
             st.session_state.demo_idx = idx + 1 if idx < n else cfg["window"]
@@ -892,6 +957,19 @@ def main():
     else:  # Emissions analysis
         idx = st.slider("Historical position", cfg["window"], n, n,
                         help="Drag to inspect any point in the test set")
+        reference_col, reference_note = st.columns([1.2, 4.8], vertical_alignment="center")
+        with reference_col:
+            show_reference = st.toggle(
+                "MEASURED REFERENCE",
+                value=False,
+                key="analysis_measured_reference",
+                help="Overlay held-out measured emissions to compare them with the soft-sensor estimate",
+            )
+        with reference_note:
+            st.caption(
+                "ENGINEERING VALIDATION OVERLAY · Compare the model estimate with held-out "
+                "measurements. This reference would not normally be available to a deployed soft sensor."
+            )
         analysis_spotlight = st.session_state.get("tour_active", False) and st.session_state.get("tour_step") == 5
         with st.container(key="tour_spotlight" if analysis_spotlight else "analysis_console"):
             if analysis_spotlight:
@@ -902,7 +980,7 @@ def main():
             with trend_col:
                 render_timeseries(df, cfg["target"], cfg["window"],
                                   cfg["warn_thresh"], cfg["alarm_thresh"], idx,
-                                  cfg["show_reference"])
+                                  show_reference)
             with equipment_col:
                 render_equipment_panel(df, idx - 1, cfg["target"],
                                        cfg["warn_thresh"], cfg["alarm_thresh"])
