@@ -108,15 +108,17 @@ Use the generated comparison metrics to check empirical coverage and interval wi
 
 ---
 
-## 🖥️ Real-Time Dashboard
+## 🖥️ Interactive Monitoring Dashboard
 
-A live monitoring dashboard built with **Streamlit + Plotly**:
+An operator-style monitoring and historical demonstration dashboard built with **Streamlit + Plotly**:
 
-- Real-time emission predictions with reported uncertainty bands
+- Emission estimates with reported uncertainty bands from saved model outputs
 - Configurable alarm and warning thresholds
 - Operator-focused trend, limit-event queue, and model-health summary
 - Optional reference overlay for engineering review
-- Live simulation mode stepping through the test set
+- Separate operator Overview, historical Live Demo, and engineering Emissions Analysis views
+- Start, pause, and reset controls for portfolio demonstration playback
+- First-launch spotlight tour with action-based steps, contextual tooltips, and a reusable restart control
 
 ---
 
@@ -135,7 +137,10 @@ project/
 │   ├── uncertainty.py          # MAPIE wrapper and evaluation utilities
 │   └── training.py             # Full training pipelines for both models
 ├── dashboard/
+│   ├── assets/                 # Dashboard turbine artwork
 │   └── app.py                  # Streamlit monitoring dashboard
+├── results/
+│   └── scientific_plots.py     # Explicit scientific figure generation
 ├── build_dataset.py            # Data pipeline entry point
 ├── compare_models.py           # Side-by-side model comparison
 └── requirements.txt
@@ -162,7 +167,10 @@ python -c "from src.training import run_pinn; run_pinn()"
 # 3. Generate the numerical comparison only
 python compare_models.py
 
-# 4. Launch dashboard
+# 4. Generate publication-style figures when needed
+python results/scientific_plots.py
+
+# 5. Launch dashboard
 streamlit run dashboard/app.py
 ```
 
@@ -204,7 +212,35 @@ dedicated chronological block that is excluded from fitting and early stopping.
 
 ---
 
+## 🙏 Acknowledgements and Attributions
+
+### Data and research
+
+- The project uses the **UCI Gas Turbine CO and NOx Emission Data Set** contributed by Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun. The dataset DOI and associated research paper are cited in the [Data Source](#-data-source) section.
+- The implementation builds on the open-source Python ecosystem, particularly PyTorch, XGBoost, Scikit-learn, MAPIE, Pandas, NumPy, Streamlit, Plotly, Matplotlib, and Seaborn. Their respective licences and documentation govern those dependencies.
+
+### Dashboard artwork and visual references
+
+- `dashboard/assets/gas_turbine_control_room.png`, the turbine artwork displayed in the dashboard, was generated with **OpenAI image-generation tooling** and selected, reviewed, and integrated by the project author.
+- `dashboard/assets/gas_turbine_nasa.svg` is a bundled NASA educational illustration retained as an unused reference asset. NASA should be credited when the asset is reused, and users should check the applicable [NASA media usage guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/).
+- Industrial monitoring screenshots and the linked Free3D turbine preview supplied during design were used only as general visual references for control-room layout, hierarchy, and colour ideas. They are not redistributed as dashboard artwork.
+
+### AI-assisted development disclosure
+
+The dashboard redesign and parts of the supporting documentation were developed with assistance from **OpenAI ChatGPT and Codex**. AI assistance included interface ideation, Streamlit and CSS implementation, debugging, test support, documentation editing, and generation of the turbine artwork. The project author directed the work, selected the final design, reviewed the generated changes, and remains responsible for the code, scientific interpretation, validation, and published results.
+
+---
+
 ## 📝 Changelog
+
+### 2026-08-21
+
+- Rebuilt the Streamlit dashboard in a professional light control-room style with robust top-level navigation and model settings separated from the operator view.
+- Added Overview, historical Live Demo, and Emissions Analysis views driven by available turbine measurements and model outputs.
+- Added the turbine equipment panel, operational dials, sensor tags, alert states, and clearly labelled historical-data playback controls.
+- Added a first-launch spotlight tour with action-based steps, progress, Back/Next/Skip controls, contextual tooltips, completion guidance, and a restart option.
+- Separated scientific figure generation from training and comparison so figures are produced only when the dedicated plotting script is run.
+- Updated the README with dashboard guidance, changelog entries, third-party attribution, and an AI-assisted development disclosure.
 
 ### 2026-08-20
 
