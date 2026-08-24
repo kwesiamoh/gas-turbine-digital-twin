@@ -188,10 +188,7 @@ python -c "from src.training import run_pinn; run_pinn()"
 # 3. Generate the numerical comparison only
 python compare_models.py
 
-# 4. Generate publication-style figures when needed
-python results/scientific_plots.py
-
-# 5. Launch dashboard
+# 4. Launch dashboard
 streamlit run dashboard/app.py
 ```
 
