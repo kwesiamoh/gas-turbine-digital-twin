@@ -25,11 +25,31 @@ Build a **real-time virtual emissions sensor** that:
 
 ---
 
+## 📐 Project Scope
+
+The project covers:
+
+- Estimation of CO and NOx from the nine operational variables in the UCI gas-turbine dataset
+- Physics-derived feature engineering and physics-constrained neural-network training
+- Comparison of XGBoost and neural soft sensors using a chronological train/test split
+- Prediction intervals, held-out performance checks, and detection of potential concept drift
+- Historical-data playback and operator-oriented model monitoring in the Streamlit dashboard
+
+The current scope does not cover:
+
+- A live connection to plant sensors, SCADA, or control systems
+- Automated turbine control or operating-point optimisation
+- Pollutants or plant configurations outside the supplied dataset
+- Root-cause diagnosis of combustion or equipment faults
+- Regulatory certification or replacement of required emissions-monitoring equipment
+
+---
+
 ## 🧠 Core Idea: Physics + AI
 
 Most machine learning models only learn patterns from raw data. This project also incorporates **thermodynamic knowledge** through engineered features and a differentiable gradient regularizer.
 
-The neural soft sensor is trained not only to minimise prediction error, but also to respect physically motivated directional priors for its predicted CO response. This is a physics-constrained multi-task neural network, not a conventional PINN that enforces governing ODE or PDE residuals.
+The neural soft sensor minimises prediction error while respecting physically motivated directional priors for its predicted CO response. It uses a physics-constrained multi-task neural-network formulation based on gradient regularisation.
 
 ---
 
@@ -76,7 +96,7 @@ L_total = L_data + λ · L_physics
 
 The data loss covers both CO and NOx. The physics loss directly constrains only CO: it penalises local gradients that violate the directional prior that CO should decrease with TIT/compression and increase with humidity. NOx is predicted jointly but currently has no direct physics constraint. Set `λ = 0` to recover a plain multi-output MLP baseline.
 
-This formulation is gradient-based physical regularization rather than an equation-based PINN: it does not solve or enforce conservation equations, ODEs, or PDEs. The internal `pinn_*` function and artefact names are retained for compatibility.
+This formulation applies gradient-based physical regularisation. The internal `pinn_*` function and artefact names are retained for compatibility.
 
 Training: AdamW + CosineAnnealingLR, gradient clipping, early stopping (patience = 20).
 
@@ -98,7 +118,7 @@ The split-conformal guarantee depends on calibration and deployment observations
 
 ### 1️⃣ Prediction Fidelity
 
-Run `compare_models.py` after training to generate the reproducible RMSE, MAE, R², empirical coverage, and interval-width table. This command writes numerical results only; it does not generate figures.
+Run `compare_models.py` after training to generate the reproducible RMSE, MAE, R², empirical coverage, and interval-width table. Generate figures separately with `results/scientific_plots.py`.
 
 ---
 
@@ -114,7 +134,7 @@ An operator-style monitoring and historical demonstration dashboard built with *
 
 - Emission estimates with reported uncertainty bands from saved model outputs
 - Configurable alarm and warning thresholds
-- Early approaching-limit assessment using recent estimate direction, threshold headroom, and the upper prediction bound; explicitly not a future forecast
+- Early approaching-limit assessment based on recent estimate direction, threshold headroom, and the upper prediction bound
 - Operator-focused trend, limit-event queue, and model-health summary
 - Visible measured-reference overlay in Emissions Analysis for held-out estimate validation
 - Separate operator Overview, historical Live Demo, and engineering Emissions Analysis views
@@ -203,8 +223,9 @@ Heysem Kaya, Pinar Tüfekci, and Erdinç Uzun (2019). *Predicting CO and NOx emi
 
 The 2014-2015 holdout contains a material NOx concept shift: its annual mean is
 about 60 mg/m3 versus 68-70 mg/m3 in 2011-2013. The available sensor features do
-not fully explain this change. Treat poor held-out NOx R2 or coverage as a drift
-alarm, not as a reason to tune against the test labels. Production use requires
+not fully explain this change. Poor held-out NOx R2 or coverage should trigger a
+drift review while the test labels remain reserved for evaluation. Production use
+requires
 periodic labeled recalibration or an additional operating-regime/configuration
 signal.
 
@@ -224,7 +245,7 @@ dedicated chronological block that is excluded from fitting and early stopping.
 
 - `dashboard/assets/gas_turbine_control_room.png`, the turbine artwork displayed in the dashboard, was generated with **OpenAI image-generation tooling** and selected, reviewed, and integrated by the project author.
 - `dashboard/assets/gas_turbine_nasa.svg` is a bundled NASA educational illustration retained as an unused reference asset. NASA should be credited when the asset is reused, and users should check the applicable [NASA media usage guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/).
-- Industrial monitoring screenshots and the linked Free3D turbine preview supplied during design were used only as general visual references for control-room layout, hierarchy, and colour ideas. They are not redistributed as dashboard artwork.
+- Industrial monitoring screenshots and the linked Free3D turbine preview supplied during design informed the control-room layout, hierarchy, and colour ideas.
 
 ### AI-assisted development disclosure
 
@@ -242,7 +263,7 @@ The dashboard redesign and parts of the supporting documentation were developed 
 - Simplified playback to one stateful Start/Pause control and reduced non-essential status colour using high-performance HMI principles.
 - Replaced oversized semicircular gauges with compact range indicators and clarified measured versus model-estimated values.
 - Renamed the heuristic ramp label to Recent TEY Trend and added a data-backed soft-sensor interval summary.
-- Added a non-forecast early-risk assessment and documented its uncertainty/headroom/trend logic throughout the dashboard tour.
+- Added an early approaching-limit assessment and documented its uncertainty/headroom/trend logic throughout the dashboard tour.
 - Moved the measured-reference overlay from hidden settings into the Emissions Analysis validation toolbar.
 - Added a first-launch spotlight tour with action-based steps, progress, Back/Next/Skip controls, contextual tooltips, completion guidance, and a restart option.
 - Separated scientific figure generation from training and comparison so figures are produced only when the dedicated plotting script is run.
