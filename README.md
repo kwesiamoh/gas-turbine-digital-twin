@@ -118,7 +118,7 @@ The split-conformal guarantee depends on calibration and deployment observations
 
 ### 1️⃣ Prediction Fidelity
 
-Run `compare_models.py` after training to generate the reproducible RMSE, MAE, R², empirical coverage, and interval-width table. Generate figures separately with `results/scientific_plots.py`.
+Run `compare_models.py` after training to generate the reproducible RMSE, MAE, R², empirical coverage, and interval-width table. 
 
 ---
 
@@ -244,8 +244,7 @@ dedicated chronological block that is excluded from fitting and early stopping.
 ### Dashboard artwork and visual references
 
 - `dashboard/assets/gas_turbine_control_room.png`, the turbine artwork displayed in the dashboard, was generated with **OpenAI image-generation tooling** and selected, reviewed, and integrated by the project author.
-- `dashboard/assets/gas_turbine_nasa.svg` is a bundled NASA educational illustration retained as an unused reference asset. NASA should be credited when the asset is reused, and users should check the applicable [NASA media usage guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/).
-- Industrial monitoring screenshots and the linked Free3D turbine preview supplied during design informed the control-room layout, hierarchy, and colour ideas.
+
 
 ### AI-assisted development disclosure
 
